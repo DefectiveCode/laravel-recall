@@ -1,35 +1,59 @@
 {
-  "name": "defectivecode/skeleton",
-  "type": "laravel",
-  "license": "MIT",
-  "autoload": {
-    "psr-4": {
-      "DefectiveCode\\Skeleton\\": "src"
-    }
-  },
-  "autoload-dev": {
-    "psr-4": {
-      "DefectiveCode\\Skeleton\\Tests\\": "tests"
-    }
-  },
-  "authors": [
-    {
-      "name": "Corey McCormick",
-      "email": "corey@defectivecode.com"
-    }
-  ],
-  "require": {
-    "php": ">=8.5"
-  },
-  "require-dev": {
-    "orchestra/testbench": "^10.0",
-    "nunomaduro/collision": "^8.0",
-    "phpunit/phpunit": "^12.0",
-    "laravel/pint": "^1.8"
-  },
-  "scripts": {
-    "post-autoload-dump": [
-      "@php vendor/bin/testbench package:discover --ansi"
-    ]
-  }
+    "name": "defectivecode/recall",
+    "description": "High-performance Redis client-side caching for Laravel using APCu or Swoole Table with automatic cache invalidation",
+    "type": "library",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "DefectiveCode\\Recall\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "DefectiveCode\\Recall\\Tests\\": "tests"
+        }
+    },
+    "authors": [
+        {
+            "name": "Corey McCormick",
+            "email": "corey@defectivecode.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "illuminate/cache": "^11.0|^12.0",
+        "illuminate/contracts": "^11.0|^12.0",
+        "illuminate/support": "^11.0|^12.0"
+    },
+    "require-dev": {
+        "laravel/octane": "^2.0",
+        "laravel/pint": "^1.8",
+        "mockery/mockery": "^1.6",
+        "nunomaduro/collision": "^8.0",
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^12.0"
+    },
+    "suggest": {
+        "ext-apcu": "Required for APCu local cache driver (default)",
+        "ext-swoole": "Required for Swoole Table local cache driver",
+        "laravel/octane": "Required for automatic cache warming on worker start"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "DefectiveCode\\Recall\\RecallServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "post-autoload-dump": [
+            "@php vendor/bin/testbench package:discover --ansi"
+        ],
+        "test": "vendor/bin/phpunit",
+        "lint": "vendor/bin/pint"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable"
 }

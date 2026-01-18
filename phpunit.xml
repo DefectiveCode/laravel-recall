@@ -6,7 +6,7 @@
     colors="true"
 >
     <testsuites>
-        <testsuite name="Unit">
+        <testsuite name="Tests">
             <directory suffix="Test.php">tests</directory>
         </testsuite>
     </testsuites>
@@ -18,6 +18,5 @@
     <php>
         <server name="APP_ENV" value="testing" />
         <server name="APP_KEY" value="AckfSECXIvnK5r28GVIWUAxmbBSjTsmF" />
-        <server name="RAY_ENABLED" value="(true)" />
     </php>
 </phpunit>
