@@ -49,7 +49,7 @@ Cache::store('recall')->put('user:1', $newUserData, 3600);
 Install the package via Composer:
 
 ```bash
-composer require defectivecode/recall
+composer require defectivecode/laravel-recall
 ```
 
 ## Requirements

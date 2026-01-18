@@ -1,5 +1,5 @@
 {
-  "name": "defectivecode/recall",
+  "name": "defectivecode/laravel-recall",
   "description": "High-performance Redis client-side caching for Laravel using APCu or Swoole Table with automatic cache invalidation",
   "type": "library",
   "license": "MIT",
