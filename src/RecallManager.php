@@ -11,6 +11,8 @@ use DefectiveCode\Recall\Cache\RecallStore;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Redis\Connections\PredisConnection;
+use Illuminate\Redis\Connections\PhpRedisConnection;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
@@ -152,12 +154,55 @@ class RecallManager
         $connection = $this->app['redis']->connection($connectionName);
         $client = $connection->client();
 
+        $cachePrefixes = $this->app['config']['recall.cache_prefixes'] ?? [];
+        $args = $this->buildTrackingArgs($redirectId, $cachePrefixes, $connection);
+
         $result = $client instanceof Redis
-            ? $client->rawCommand('CLIENT', 'TRACKING', 'ON', 'REDIRECT', (string) $redirectId)
-            : $client->executeRaw(['CLIENT', 'TRACKING', 'ON', 'REDIRECT', (string) $redirectId]);
+            ? $client->rawCommand(...$args)
+            : $client->executeRaw($args);
 
         if ($result === false) {
             throw new RuntimeException('Failed to enable CLIENT TRACKING');
         }
+    }
+
+    /**
+     * @param  array<string>  $cachePrefixes
+     * @return array<string>
+     */
+    protected function buildTrackingArgs(int $redirectId, array $cachePrefixes, mixed $connection): array
+    {
+        $args = ['CLIENT', 'TRACKING', 'ON', 'REDIRECT', (string) $redirectId];
+
+        if (empty($cachePrefixes)) {
+            return $args;
+        }
+
+        $args[] = 'BCAST';
+
+        $fullPrefix = $this->getFullKeyPrefix($connection);
+
+        foreach ($cachePrefixes as $prefix) {
+            $args[] = 'PREFIX';
+            $args[] = $fullPrefix.$prefix;
+        }
+
+        return $args;
+    }
+
+    protected function getFullKeyPrefix(mixed $connection): string
+    {
+        $connectionPrefix = match (true) {
+            $connection instanceof PhpRedisConnection => $connection->client()->getOption(Redis::OPT_PREFIX) ?: '',
+            $connection instanceof PredisConnection => $connection->getOptions()->prefix ?: '',
+            default => '',
+        };
+
+        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
+        $storePrefix = $this->app['config']["cache.stores.{$redisStoreName}.prefix"]
+            ?? $this->app['config']['cache.prefix']
+            ?? '';
+
+        return $connectionPrefix.$storePrefix;
     }
 }
