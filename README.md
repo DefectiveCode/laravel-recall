@@ -5,25 +5,76 @@
     </picture>
 </p>
 
-<p align="center">
-    <a href="https://packagist.org/packages/defectivecode/skeleton">
-        <img src="https://poser.pugx.org/defectivecode/skeleton/d/total.svg" alt="Total Downloads">
-    </a>
-    <a href="https://packagist.org/packages/defectivecode/skeleton">
-        <img src="https://poser.pugx.org/defectivecode/skeleton/v/stable.svg" alt="Latest Stable Version">
-    </a>
-    <a href="https://packagist.org/packages/defectivecode/skeleton">
-        <img src="https://poser.pugx.org/defectivecode/skeleton/license.svg" alt="License">
-    </a>
-</p>
+[English](https://www.defectivecode.com/packages/laravel-recall/en) |
+[العربية](https://www.defectivecode.com/packages/laravel-recall/ar) |
+[বাংলা](https://www.defectivecode.com/packages/laravel-recall/bn) |
+[Bosanski](https://www.defectivecode.com/packages/laravel-recall/bs) |
+[Deutsch](https://www.defectivecode.com/packages/laravel-recall/de) |
+[Español](https://www.defectivecode.com/packages/laravel-recall/es) |
+[Français](https://www.defectivecode.com/packages/laravel-recall/fr) |
+[हिन्दी](https://www.defectivecode.com/packages/laravel-recall/hi) |
+[Italiano](https://www.defectivecode.com/packages/laravel-recall/it) |
+[日本語](https://www.defectivecode.com/packages/laravel-recall/ja) |
+[한국어](https://www.defectivecode.com/packages/laravel-recall/ko) |
+[मराठी](https://www.defectivecode.com/packages/laravel-recall/mr) |
+[Português](https://www.defectivecode.com/packages/laravel-recall/pt) |
+[Русский](https://www.defectivecode.com/packages/laravel-recall/ru) |
+[Kiswahili](https://www.defectivecode.com/packages/laravel-recall/sw) |
+[தமிழ்](https://www.defectivecode.com/packages/laravel-recall/ta) |
+[తెలుగు](https://www.defectivecode.com/packages/laravel-recall/te) |
+[Türkçe](https://www.defectivecode.com/packages/laravel-recall/tr) |
+[اردو](https://www.defectivecode.com/packages/laravel-recall/ur) |
+[Tiếng Việt](https://www.defectivecode.com/packages/laravel-recall/vi) |
+[中文](https://www.defectivecode.com/packages/laravel-recall/zh)
 
 # Introduction
 
-...
+**Recall** is a high-performance Redis client-side caching package for Laravel. It leverages Redis 6's
+[client-side caching](https://redis.io/docs/latest/develop/reference/client-side-caching/) feature with automatic invalidation to
+dramatically reduce Redis round trips and latency. Built specifically for Laravel Octane environments, it uses APCu or
+Swoole Table as a local cache layer that stays synchronized with Redis through invalidation messages.
+
+When you fetch a value from Redis, Recall stores it locally. When that value changes in Redis (from any client), Redis
+automatically notifies Recall to invalidate the local copy. This gives you the speed of in-memory caching with the
+consistency guarantees of Redis.
+
+## Key Features
+
+- **Automatic Invalidation**: Redis notifies your application when cached keys change, ensuring cache coherence
+- **Zero Configuration**: Works out of the box with sensible defaults
+- **Octane Integration**: Automatic connection warming, request-based invalidation processing, and graceful shutdown
+- **Dual Driver Support**: APCu for all Octane servers, Swoole Table for Swoole/OpenSwoole environments
+- **Selective Caching**: Configure which key prefixes to cache locally
+- **Race Condition Protection**: Pending request tracking prevents caching stale data during concurrent invalidations
+
+## Example
+
+```php
+// Configure recall as your cache driver
+// config/cache.php
+'stores' => [
+    'recall' => [
+        'driver' => 'recall',
+    ],
+],
+
+// Use it like any Laravel cache
+use Illuminate\Support\Facades\Cache;
+
+// First call: fetches from Redis, stores locally
+$user = Cache::store('recall')->get('user:1');
+
+// Subsequent calls: served from local APCu/Swoole Table (microseconds)
+$user = Cache::store('recall')->get('user:1');
+
+// When user:1 is updated anywhere, Redis notifies Recall to invalidate
+Cache::store('recall')->put('user:1', $newUserData, 3600);
+// Local cache is automatically invalidated on all workers
+```
 
 # Documentation
 
-You may read the [documentation on our website](https://www.defectivecode.com/packages/skelton).
+You may read the [documentation on our website](https://www.defectivecode.com/packages/laravel-recall/en).
 
 # Support Guidelines
 

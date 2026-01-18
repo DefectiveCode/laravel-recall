@@ -2,19 +2,24 @@
 
 declare(strict_types=1);
 
-namespace DefectiveCode\Skeleton\Tests;
+namespace DefectiveCode\Recall\Tests;
 
-use Carbon\Carbon;
-use Illuminate\Support\Facades\Http;
+use DefectiveCode\Recall\RecallServiceProvider;
 use Orchestra\Testbench\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
+    use RequiresExtensions;
 
-        Http::preventStrayRequests();
-        Carbon::setTestNow('1988-12-15 06:00:00');
+    protected function getPackageProviders($app): array
+    {
+        return [
+            RecallServiceProvider::class,
+        ];
+    }
+
+    protected function defineEnvironment($app): void
+    {
+        $app['config']->set('recall.enabled', true);
     }
 }

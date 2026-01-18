@@ -1,15 +1,16 @@
 {
-  "name": "defectivecode/skeleton",
-  "type": "laravel",
+  "name": "defectivecode/recall",
+  "description": "High-performance Redis client-side caching for Laravel using APCu or Swoole Table with automatic cache invalidation",
+  "type": "library",
   "license": "MIT",
   "autoload": {
     "psr-4": {
-      "DefectiveCode\\Skeleton\\": "src"
+      "DefectiveCode\\Recall\\": "src"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "DefectiveCode\\Skeleton\\Tests\\": "tests"
+      "DefectiveCode\\Recall\\Tests\\": "tests"
     }
   },
   "authors": [
@@ -19,17 +20,40 @@
     }
   ],
   "require": {
-    "php": ">=8.5"
+    "php": ">=8.4",
+    "illuminate/cache": "^11.0|^12.0",
+    "illuminate/contracts": "^11.0|^12.0",
+    "illuminate/support": "^11.0|^12.0"
   },
   "require-dev": {
-    "orchestra/testbench": "^10.0",
+    "laravel/octane": "^2.0",
+    "laravel/pint": "^1.8",
+    "mockery/mockery": "^1.6",
     "nunomaduro/collision": "^8.0",
-    "phpunit/phpunit": "^12.0",
-    "laravel/pint": "^1.8"
+    "orchestra/testbench": "^10.0",
+    "phpunit/phpunit": "^12.0"
+  },
+  "suggest": {
+    "ext-apcu": "Required for APCu local cache driver (default)",
+    "ext-swoole": "Required for Swoole Table local cache driver",
+    "laravel/octane": "Required for automatic cache warming on worker start"
+  },
+  "extra": {
+    "laravel": {
+      "providers": [
+        "DefectiveCode\\Recall\\RecallServiceProvider"
+      ]
+    }
   },
   "scripts": {
     "post-autoload-dump": [
       "@php vendor/bin/testbench package:discover --ansi"
-    ]
-  }
+    ],
+    "test": "vendor/bin/phpunit",
+    "lint": "vendor/bin/pint"
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "minimum-stability": "stable"
 }
