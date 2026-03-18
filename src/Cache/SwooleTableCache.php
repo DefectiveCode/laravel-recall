@@ -37,14 +37,15 @@ class SwooleTableCache implements LocalCacheInterface
 
     public function get(string $key): mixed
     {
-        $row = $this->table->get($this->keyPrefix.$key);
+        $hashedKey = $this->hashKey($key);
+        $row = $this->table->get($hashedKey);
 
         if ($row === false) {
             return null;
         }
 
         if ($row['expires_at'] > 0 && $row['expires_at'] < time()) {
-            $this->table->del($this->keyPrefix.$key);
+            $this->table->del($hashedKey);
 
             return null;
         }
@@ -57,7 +58,7 @@ class SwooleTableCache implements LocalCacheInterface
         $effectiveTtl = $ttl > 0 ? $ttl : $this->defaultTtl;
         $expiresAt = $effectiveTtl > 0 ? time() + $effectiveTtl : 0;
 
-        return $this->table->set($this->keyPrefix.$key, [
+        return $this->table->set($this->hashKey($key), [
             'value' => serialize($value),
             'expires_at' => $expiresAt,
         ]);
@@ -65,7 +66,7 @@ class SwooleTableCache implements LocalCacheInterface
 
     public function forget(string $key): bool
     {
-        return $this->table->del($this->keyPrefix.$key);
+        return $this->table->del($this->hashKey($key));
     }
 
     public function flush(): bool
@@ -73,9 +74,7 @@ class SwooleTableCache implements LocalCacheInterface
         $keysToDelete = [];
 
         foreach ($this->table as $key => $row) {
-            if (str_starts_with($key, $this->keyPrefix)) {
-                $keysToDelete[] = $key;
-            }
+            $keysToDelete[] = $key;
         }
 
         foreach ($keysToDelete as $key) {
@@ -83,6 +82,11 @@ class SwooleTableCache implements LocalCacheInterface
         }
 
         return true;
+    }
+
+    protected function hashKey(string $key): string
+    {
+        return md5($this->keyPrefix.$key);
     }
 
     protected function ensureSwooleAvailable(): void
