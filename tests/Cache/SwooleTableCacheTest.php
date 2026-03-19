@@ -128,4 +128,17 @@ class SwooleTableCacheTest extends TestCase
         $cache->put('key', 'value');
         $this->assertEquals('value', $cache->get('key'));
     }
+
+    public function testLongKeyIsHashedAndWorks(): void
+    {
+        $cache = new SwooleTableCache;
+
+        $longKey = 'core.workspace.system.database.core.organizations.columns';
+        $cache->put($longKey, 'value');
+
+        $this->assertEquals('value', $cache->get($longKey));
+
+        $cache->forget($longKey);
+        $this->assertNull($cache->get($longKey));
+    }
 }
