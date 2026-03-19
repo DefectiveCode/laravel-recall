@@ -7,13 +7,15 @@ namespace DefectiveCode\Recall\Cache;
 use Redis;
 use RuntimeException;
 use Illuminate\Cache\RedisStore;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Store;
+use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\RecallManager;
 use Illuminate\Redis\Connections\PredisConnection;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
-class RecallStore implements Store
+class RecallStore implements Store, LockProvider
 {
     /** @var array<string> */
     protected array $cachePrefixes;
@@ -123,6 +125,16 @@ class RecallStore implements Store
     public function getPrefix(): string
     {
         return $this->redisStore->getPrefix();
+    }
+
+    public function lock($name, $seconds = 0, $owner = null): Lock
+    {
+        return $this->redisStore->lock($name, $seconds, $owner);
+    }
+
+    public function restoreLock($name, $owner): Lock
+    {
+        return $this->redisStore->restoreLock($name, $owner);
     }
 
     protected function shouldCacheLocally(string $key): bool

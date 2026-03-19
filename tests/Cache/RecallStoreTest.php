@@ -9,7 +9,9 @@ use Mockery;
 use RuntimeException;
 use PHPUnit\Framework\TestCase;
 use Illuminate\Cache\RedisStore;
+use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Store;
+use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\RecallManager;
 use DefectiveCode\Recall\Cache\RecallStore;
 use DefectiveCode\Recall\Tracking\ClientTracker;
@@ -312,5 +314,61 @@ class RecallStoreTest extends TestCase
         $store = new RecallStore($redisStore, $localCache, $manager);
 
         $this->assertEquals('laravel_cache:', $store->getPrefix());
+    }
+
+    public function testImplementsLockProvider(): void
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $manager = Mockery::mock(RecallManager::class);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertInstanceOf(LockProvider::class, $store);
+    }
+
+    public function testLockDelegatesToRedisStore(): void
+    {
+        $lock = Mockery::mock(Lock::class);
+
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('lock')->with('my-lock', 10, 'owner-token')->once()->andReturn($lock);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $manager = Mockery::mock(RecallManager::class);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertSame($lock, $store->lock('my-lock', 10, 'owner-token'));
+    }
+
+    public function testLockDelegatesToRedisStoreWithDefaults(): void
+    {
+        $lock = Mockery::mock(Lock::class);
+
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('lock')->with('my-lock', 0, null)->once()->andReturn($lock);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $manager = Mockery::mock(RecallManager::class);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertSame($lock, $store->lock('my-lock'));
+    }
+
+    public function testRestoreLockDelegatesToRedisStore(): void
+    {
+        $lock = Mockery::mock(Lock::class);
+
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('restoreLock')->with('my-lock', 'owner-token')->once()->andReturn($lock);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $manager = Mockery::mock(RecallManager::class);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertSame($lock, $store->restoreLock('my-lock', 'owner-token'));
     }
 }
