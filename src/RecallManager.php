@@ -128,7 +128,7 @@ class RecallManager
     }
 
     /**
-     * @return array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float}
+     * @return array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float, scheme?: string}
      */
     protected function getRedisConnectionConfig(): array
     {
@@ -143,6 +143,7 @@ class RecallManager
             'username' => $redisConfig['username'] ?? null,
             'database' => (int) ($redisConfig['database'] ?? 0),
             'timeout' => (float) ($redisConfig['read_timeout'] ?? $redisConfig['timeout'] ?? 5.0),
+            'scheme' => $redisConfig['scheme'] ?? 'tcp',
         ];
     }
 
@@ -162,7 +163,15 @@ class RecallManager
             : $client->executeRaw($args);
 
         if ($result === false) {
-            throw new RuntimeException('Failed to enable CLIENT TRACKING');
+            $lastError = $client instanceof Redis ? $client->getLastError() : 'unknown error';
+
+            if ($client instanceof Redis) {
+                $client->clearLastError();
+            }
+
+            throw new RuntimeException(
+                "Failed to enable CLIENT TRACKING on connection '{$connectionName}' with REDIRECT {$redirectId}: {$lastError}"
+            );
         }
     }
 

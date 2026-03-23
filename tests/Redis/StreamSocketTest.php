@@ -81,4 +81,43 @@ class StreamSocketTest extends TestCase
 
         $this->assertFalse($this->socket->isConnected());
     }
+
+    public function testItDefaultsToTcpScheme(): void
+    {
+        $socket = new StreamSocket('127.0.0.1', 6379);
+
+        $this->assertFalse($socket->isConnected());
+    }
+
+    public function testItAcceptsTlsScheme(): void
+    {
+        $socket = new StreamSocket('127.0.0.1', 6379, 5.0, 'tls');
+
+        $this->assertFalse($socket->isConnected());
+    }
+
+    public function testItAcceptsSslScheme(): void
+    {
+        $socket = new StreamSocket('127.0.0.1', 6379, 5.0, 'ssl');
+
+        $this->assertFalse($socket->isConnected());
+    }
+
+    public function testItThrowsConnectionExceptionForTlsOnPlainPort(): void
+    {
+        $socket = new StreamSocket('127.0.0.1', 6379, 0.5, 'tls');
+
+        $this->expectException(ConnectionException::class);
+
+        $socket->connect();
+    }
+
+    public function testItThrowsConnectionExceptionForSslOnPlainPort(): void
+    {
+        $socket = new StreamSocket('127.0.0.1', 6379, 0.5, 'ssl');
+
+        $this->expectException(ConnectionException::class);
+
+        $socket->connect();
+    }
 }

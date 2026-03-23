@@ -255,4 +255,48 @@ class RecallManagerTest extends TestCase
 
         $this->assertEquals('fallback_', $prefix);
     }
+
+    public function testItExtractsSchemeFromRedisConfig(): void
+    {
+        $this->configureRedis();
+        $this->app['config']->set('database.redis.default.scheme', 'tls');
+
+        $manager = $this->app->make(RecallManager::class);
+
+        $reflection = new ReflectionClass($manager);
+        $method = $reflection->getMethod('getRedisConnectionConfig');
+
+        $config = $method->invoke($manager);
+
+        $this->assertEquals('tls', $config['scheme']);
+    }
+
+    public function testItDefaultsSchemeToTcp(): void
+    {
+        $this->configureRedis();
+
+        $manager = $this->app->make(RecallManager::class);
+
+        $reflection = new ReflectionClass($manager);
+        $method = $reflection->getMethod('getRedisConnectionConfig');
+
+        $config = $method->invoke($manager);
+
+        $this->assertEquals('tcp', $config['scheme']);
+    }
+
+    public function testItExtractsSslScheme(): void
+    {
+        $this->configureRedis();
+        $this->app['config']->set('database.redis.default.scheme', 'ssl');
+
+        $manager = $this->app->make(RecallManager::class);
+
+        $reflection = new ReflectionClass($manager);
+        $method = $reflection->getMethod('getRedisConnectionConfig');
+
+        $config = $method->invoke($manager);
+
+        $this->assertEquals('ssl', $config['scheme']);
+    }
 }

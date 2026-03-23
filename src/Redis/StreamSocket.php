@@ -17,6 +17,7 @@ class StreamSocket
         protected string $host,
         protected int $port,
         protected float $timeout = 5.0,
+        protected string $scheme = 'tcp',
     ) {}
 
     public function connect(): void
@@ -24,8 +25,11 @@ class StreamSocket
         $errno = 0;
         $errstr = '';
 
+        $isTls = in_array($this->scheme, ['tls', 'ssl'], true);
+        $protocol = $isTls ? 'tls' : 'tcp';
+
         $this->socket = @stream_socket_client(
-            "tcp://{$this->host}:{$this->port}",
+            "{$protocol}://{$this->host}:{$this->port}",
             $errno,
             $errstr,
             $this->timeout,
