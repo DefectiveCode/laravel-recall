@@ -133,6 +133,17 @@ class InvalidationSubscriberTest extends TestCase
         $this->assertEquals('__redis__:invalidate', InvalidationSubscriber::INVALIDATION_CHANNEL);
     }
 
+    public function testItAcceptsSchemeInConfig(): void
+    {
+        $subscriber = new InvalidationSubscriber([
+            'host' => '127.0.0.1',
+            'port' => 6379,
+            'scheme' => 'tls',
+        ]);
+
+        $this->assertFalse($subscriber->isConnected());
+    }
+
     protected function invokeMethod(object $object, string $methodName, array $parameters = []): mixed
     {
         $reflection = new ReflectionClass($object);

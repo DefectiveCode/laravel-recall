@@ -28,7 +28,7 @@ class InvalidationSubscriber
     protected bool $subscribed = false;
 
     /**
-     * @param  array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float}  $config
+     * @param  array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float, scheme?: string}  $config
      */
     public function __construct(
         protected array $config,
@@ -42,6 +42,7 @@ class InvalidationSubscriber
             $this->config['host'],
             $this->config['port'],
             $this->config['timeout'] ?? 5.0,
+            $this->config['scheme'] ?? 'tcp',
         );
 
         $this->socket->connect();
