@@ -9,13 +9,13 @@ use RuntimeException;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Store;
-use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\RecallManager;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Redis\Connections\PredisConnection;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
-class RecallStore implements Store, LockProvider
+class RecallStore implements LockProvider, Store
 {
     /** @var array<string> */
     protected array $cachePrefixes;
@@ -107,6 +107,18 @@ class RecallStore implements Store, LockProvider
     public function forever($key, $value): bool
     {
         return $this->redisStore->forever($key, $value);
+    }
+
+    public function touch($key, $seconds): bool
+    {
+        if ($this->shouldCacheLocally($key)) {
+            $this->localCache->forget($this->getRedisKey($key));
+        }
+
+        return (bool) $this->redisStore->connection()->expire(
+            $this->redisStore->getPrefix().$key,
+            (int) max(1, $seconds),
+        );
     }
 
     public function forget($key): bool
