@@ -11,9 +11,9 @@ use PHPUnit\Framework\TestCase;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Store;
-use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\RecallManager;
 use DefectiveCode\Recall\Cache\RecallStore;
+use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use DefectiveCode\Recall\Tracking\PendingRequest;
 use Illuminate\Redis\Connections\PhpRedisConnection;
@@ -269,6 +269,47 @@ class RecallStoreTest extends TestCase
         $store = new RecallStore($redisStore, $localCache, $manager);
 
         $this->assertTrue($store->forever('key', 'value'));
+    }
+
+    public function testTouchExpiresRedisKeyAndClearsLocalCache(): void
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('getPrefix')->andReturn('laravel_cache:');
+
+        $connection = Mockery::mock(PhpRedisConnection::class);
+        $redis = Mockery::mock(Redis::class);
+        $redis->shouldReceive('getOption')->with(Redis::OPT_PREFIX)->andReturn('');
+        $connection->shouldReceive('client')->andReturn($redis);
+        $connection->shouldReceive('expire')->with('laravel_cache:key', 120)->once()->andReturn(1);
+        $redisStore->shouldReceive('connection')->andReturn($connection);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldReceive('forget')->with('laravel_cache:key')->once()->andReturn(true);
+
+        $manager = Mockery::mock(RecallManager::class);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertTrue($store->touch('key', 120));
+    }
+
+    public function testTouchDoesNotClearLocalCacheWhenDisabled(): void
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('getPrefix')->once()->andReturn('laravel_cache:');
+
+        $connection = Mockery::mock(PhpRedisConnection::class);
+        $connection->shouldReceive('expire')->with('laravel_cache:key', 1)->once()->andReturn(true);
+        $redisStore->shouldReceive('connection')->once()->andReturn($connection);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldNotReceive('forget');
+
+        $manager = Mockery::mock(RecallManager::class);
+
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
+
+        $this->assertTrue($store->touch('key', 0));
     }
 
     public function testForgetDelegatesToRedisStore(): void

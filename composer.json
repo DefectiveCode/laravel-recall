@@ -21,16 +21,16 @@
   ],
   "require": {
     "php": ">=8.4",
-    "illuminate/cache": "^11.0|^12.0",
-    "illuminate/contracts": "^11.0|^12.0",
-    "illuminate/support": "^11.0|^12.0"
+    "illuminate/cache": "^11.0|^12.0|^13.0",
+    "illuminate/contracts": "^11.0|^12.0|^13.0",
+    "illuminate/support": "^11.0|^12.0|^13.0"
   },
   "require-dev": {
     "laravel/octane": "^2.0",
     "laravel/pint": "^1.8",
     "mockery/mockery": "^1.6",
     "nunomaduro/collision": "^8.0",
-    "orchestra/testbench": "^10.0",
+    "orchestra/testbench": "^9.0|^10.0|^11.0",
     "phpunit/phpunit": "^12.0"
   },
   "suggest": {
