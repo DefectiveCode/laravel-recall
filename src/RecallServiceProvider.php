@@ -53,9 +53,11 @@ class RecallServiceProvider extends ServiceProvider
 
     protected function registerOctaneListeners(): void
     {
-        if (! class_exists(RequestReceived::class)) {
+        if (! class_exists(RequestReceived::class) || ! ($this->app['config']['recall.enabled'] ?? true)) {
             return;
         }
+
+        $this->app->make(RecallManager::class);
 
         $events = $this->app['events'];
 
