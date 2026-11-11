@@ -6,6 +6,7 @@ namespace DefectiveCode\Recall\Cache;
 
 use Swoole\Table;
 use DefectiveCode\Recall\Contracts\FencedLocalCache;
+use DefectiveCode\Recall\Exceptions\LocalCacheException;
 
 class SharedSwooleTableCache implements FencedLocalCache
 {
@@ -29,6 +30,12 @@ class SharedSwooleTableCache implements FencedLocalCache
         $this->defaultTtl = $config['default_ttl'] ?? 3600;
         $this->valueSize = $config['value_size'] ?? 8192;
         $this->stripes = max(1, $config['epoch_stripes'] ?? 1024);
+
+        for ($stripe = 0; $stripe < $this->stripes; $stripe++) {
+            if ($this->epochs->incr((string) $stripe, 'epoch', 0) === false) {
+                throw new LocalCacheException('The recall_epochs table is too small for the configured epoch_stripes.');
+            }
+        }
     }
 
     public function get(string $key): mixed
@@ -60,7 +67,7 @@ class SharedSwooleTableCache implements FencedLocalCache
             return false;
         }
 
-        return $this->table->set($hashedKey, [
+        return @$this->table->set($hashedKey, [
             'value' => $serialized,
             'expires_at' => $this->expiresAt($ttl),
         ]);

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall\Tests\Cache;
 
 use stdClass;
+use ErrorException;
 use PHPUnit\Framework\TestCase;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tests\RequiresExtensions;
@@ -171,5 +172,30 @@ class SwooleTableCacheTest extends TestCase
 
         $cache->forget($longKey);
         $this->assertNull($cache->get($longKey));
+    }
+
+    public function testItSkipsTheFillWhenTheTableIsFull(): void
+    {
+        $cache = new SwooleTableCache(['table_size' => 8]);
+
+        set_error_handler(static function (int $severity, string $message): bool {
+            if (! (error_reporting() & $severity)) {
+                return false;
+            }
+
+            throw new ErrorException($message, 0, $severity);
+        });
+
+        try {
+            $results = [];
+
+            for ($i = 0; $i < 4096; $i++) {
+                $results[] = $cache->put("k{$i}", 'v');
+            }
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertContains(false, $results);
     }
 }

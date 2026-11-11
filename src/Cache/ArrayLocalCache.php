@@ -12,16 +12,19 @@ class ArrayLocalCache implements LocalCacheInterface
 
     protected int $maxEntries;
 
+    protected int $valueSize;
+
     /** @var array<string, array{0: string, 1: int}> */
     protected array $entries = [];
 
     /**
-     * @param  array{default_ttl?: int, max_entries?: int}  $config
+     * @param  array{default_ttl?: int, max_entries?: int, value_size?: int}  $config
      */
     public function __construct(array $config = [])
     {
         $this->defaultTtl = $config['default_ttl'] ?? 3600;
         $this->maxEntries = max(1, $config['max_entries'] ?? 1000);
+        $this->valueSize = $config['value_size'] ?? 8192;
     }
 
     public function get(string $key): mixed
@@ -46,11 +49,17 @@ class ArrayLocalCache implements LocalCacheInterface
     {
         unset($this->entries[$key]);
 
+        $serialized = serialize($value);
+
+        if (strlen($serialized) > $this->valueSize) {
+            return false;
+        }
+
         while (count($this->entries) >= $this->maxEntries) {
             unset($this->entries[array_key_first($this->entries)]);
         }
 
-        $this->entries[$key] = [serialize($value), time() + ($ttl > 0 ? $ttl : $this->defaultTtl)];
+        $this->entries[$key] = [$serialized, time() + ($ttl > 0 ? $ttl : $this->defaultTtl)];
 
         return true;
     }

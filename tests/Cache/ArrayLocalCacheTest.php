@@ -93,4 +93,14 @@ class ArrayLocalCacheTest extends TestCase
 
         $this->assertSame(1, $cache->get('key')->value);
     }
+
+    public function testItSkipsValuesLargerThanTheValueSize(): void
+    {
+        $cache = new ArrayLocalCache(['value_size' => 64]);
+
+        $cache->put('key', 'small');
+
+        $this->assertFalse($cache->put('key', str_repeat('x', 200)));
+        $this->assertNull($cache->get('key'));
+    }
 }

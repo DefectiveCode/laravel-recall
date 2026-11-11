@@ -81,7 +81,7 @@ class RecallManagerTest extends TestCase
         $this->assertSame($subscriber1, $subscriber2);
     }
 
-    public function testGetLocalCacheReturnsApcuByDefault(): void
+    public function testItGetLocalCacheReturnsApcuByDefault(): void
     {
         $this->app['config']->set('recall.local_cache.driver', 'apcu');
 
@@ -91,7 +91,7 @@ class RecallManagerTest extends TestCase
         $this->assertInstanceOf(LocalCache::class, $localCache);
     }
 
-    public function testGetLocalCacheReturnsSwooleWhenConfigured(): void
+    public function testItGetLocalCacheReturnsSwooleWhenConfigured(): void
     {
         $this->requireSwoole();
 
@@ -103,7 +103,7 @@ class RecallManagerTest extends TestCase
         $this->assertInstanceOf(SwooleTableCache::class, $localCache);
     }
 
-    public function testGetLocalCacheLazyInitialization(): void
+    public function testItGetLocalCacheLazyInitialization(): void
     {
         $manager = $this->app->make(RecallManager::class);
 

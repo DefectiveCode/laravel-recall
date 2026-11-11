@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall\Tests;
 
 use Mockery;
+use stdClass;
+use RuntimeException;
 use ReflectionProperty;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Events\Dispatcher;
@@ -17,7 +19,9 @@ use Illuminate\Redis\Connections\Connection;
 use DefectiveCode\Recall\Cache\ArrayLocalCache;
 use DefectiveCode\Recall\RecallServiceProvider;
 use DefectiveCode\Recall\Tracking\ClientTracker;
+use Illuminate\Contracts\Debug\ExceptionHandler;
 use DefectiveCode\Recall\Tracking\PendingRequest;
+use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 use DefectiveCode\Recall\Listeners\ProcessQueueInvalidations;
@@ -170,5 +174,154 @@ class QueueModeTest extends TestCase
         $this->app->instance('events', new Dispatcher($this->app));
 
         (new RecallServiceProvider($this->app))->boot();
+    }
+
+    public function testItDeactivatesAndStaysPassThroughWhenEnablingTrackingFails(): void
+    {
+        $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activateForQueue')->once();
+        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('processInvalidations')->once()->andThrow(new RuntimeException('redis down'));
+        $manager->shouldReceive('deactivate')->once();
+
+        $handler = Mockery::mock(ExceptionHandler::class);
+        $handler->shouldReceive('report')->once();
+        $this->app->instance(ExceptionHandler::class, $handler);
+
+        $this->assertNull((new ProcessQueueInvalidations($manager))->handle(new Looping('redis', 'default')));
+    }
+
+    public function testItFlushesAndReEnablesTrackingWhenTheSubscriberIsDisconnected(): void
+    {
+        $client = new stdClass;
+        $manager = $this->trackingManager($client);
+
+        $subscriber = Mockery::mock(InvalidationSubscriber::class);
+        $subscriber->shouldReceive('isConnected')->andReturn(false);
+        $subscriber->shouldReceive('close')->once();
+        $this->setProperty($manager, 'subscriber', $subscriber);
+        $this->setProperty($manager, 'trackedClient', $client);
+
+        $manager->processInvalidations();
+
+        $this->assertSame(1, $manager->flushes);
+        $this->assertSame(1, $manager->enables);
+    }
+
+    public function testItFlushesAndReEnablesTrackingWhenTheDataClientIsReplaced(): void
+    {
+        $manager = $this->trackingManager(new stdClass);
+
+        $subscriber = Mockery::mock(InvalidationSubscriber::class);
+        $subscriber->shouldReceive('isConnected')->andReturn(true);
+        $subscriber->shouldReceive('close')->once();
+        $this->setProperty($manager, 'subscriber', $subscriber);
+        $this->setProperty($manager, 'trackedClient', new stdClass);
+
+        $manager->processInvalidations();
+
+        $this->assertSame(1, $manager->flushes);
+        $this->assertSame(1, $manager->enables);
+    }
+
+    public function testItDoesNotFlushWhenTrackingIsIntact(): void
+    {
+        $client = new stdClass;
+        $manager = $this->trackingManager($client);
+
+        $subscriber = Mockery::mock(InvalidationSubscriber::class);
+        $subscriber->shouldReceive('isConnected')->andReturn(true);
+        $this->setProperty($manager, 'subscriber', $subscriber);
+        $this->setProperty($manager, 'trackedClient', $client);
+
+        $manager->processInvalidations();
+
+        $this->assertSame(0, $manager->flushes);
+        $this->assertSame(0, $manager->enables);
+    }
+
+    protected function trackingManager(object $client): RecallManager
+    {
+        $manager = new class($this->app, $client) extends RecallManager
+        {
+            public int $flushes = 0;
+
+            public int $enables = 0;
+
+            public function __construct($app, protected object $client)
+            {
+                parent::__construct($app);
+            }
+
+            public function getLocalCache(): LocalCacheInterface
+            {
+                $cache = Mockery::mock(LocalCacheInterface::class);
+                $cache->shouldReceive('flush')->andReturnUsing(function (): bool {
+                    $this->flushes++;
+
+                    return true;
+                });
+
+                return $cache;
+            }
+
+            public function getTracker(): ClientTracker
+            {
+                return Mockery::mock(ClientTracker::class, function ($tracker): void {
+                    $tracker->shouldReceive('clearPendingRequests');
+                    $tracker->shouldReceive('processInvalidations');
+                });
+            }
+
+            public function enableTracking(): void
+            {
+                $this->enables++;
+                $this->trackingEnabled = true;
+            }
+
+            protected function dataClient(): object
+            {
+                return $this->client;
+            }
+        };
+
+        $this->setProperty($manager, 'trackingEnabled', true);
+
+        return $manager;
+    }
+
+    protected function setProperty(object $object, string $name, mixed $value): void
+    {
+        (new ReflectionProperty(RecallManager::class, $name))->setValue($object, $value);
+    }
+
+    public function testItFlushesTheLocalCacheAfterRedisOnFlush(): void
+    {
+        $order = [];
+
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('flush')->once()->andReturnUsing(function () use (&$order): bool {
+            $order[] = 'redis';
+
+            return true;
+        });
+
+        $cache = Mockery::mock(LocalCacheInterface::class);
+        $cache->shouldReceive('flush')->once()->andReturnUsing(function () use (&$order): bool {
+            $order[] = 'local';
+
+            return true;
+        });
+
+        $tracker = Mockery::mock(ClientTracker::class);
+        $tracker->shouldReceive('clearPendingRequests')->once();
+
+        $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('getTracker')->andReturn($tracker);
+
+        (new RecallStore($redisStore, $cache, $manager))->flush();
+
+        $this->assertSame(['redis', 'local'], $order);
     }
 }

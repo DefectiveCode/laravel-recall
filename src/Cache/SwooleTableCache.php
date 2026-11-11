@@ -68,7 +68,7 @@ class SwooleTableCache implements LocalCacheInterface
             return false;
         }
 
-        return $this->table->set($this->hashKey($key), [
+        return @$this->table->set($this->hashKey($key), [
             'value' => $serialized,
             'expires_at' => $expiresAt,
         ]);

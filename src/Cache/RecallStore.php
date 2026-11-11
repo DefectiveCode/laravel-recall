@@ -53,12 +53,11 @@ class RecallStore implements LockProvider, Store
         $redisKey = $this->getRedisKey($key);
 
         $localCache = $this->local();
-        $localValue = $localCache->get($redisKey);
-
-        if ($localValue !== null && $this->manager->isQueueMode()) {
+        if ($this->manager->isQueueMode()) {
             $this->manager->processInvalidations();
-            $localValue = $localCache->get($redisKey);
         }
+
+        $localValue = $localCache->get($redisKey);
 
         if ($localValue !== null) {
             return $localValue;
@@ -70,7 +69,7 @@ class RecallStore implements LockProvider, Store
         $value = $this->redisStore->get($key);
 
         if ($value !== null && $this->manager->getTracker()->completePendingRequest($pendingRequest)) {
-            if ($fence !== null && $localCache instanceof FencedLocalCache) {
+            if ($fence !== null) {
                 $localCache->putFenced($redisKey, $value, $fence);
             } else {
                 $localCache->put($redisKey, $value);
@@ -166,12 +165,14 @@ class RecallStore implements LockProvider, Store
 
     public function flush(): bool
     {
-        if ($this->enabled && $this->manager->isActive()) {
-            $this->local()->flush();
-            $this->manager->getTracker()->clearPendingRequests();
+        try {
+            return $this->redisStore->flush();
+        } finally {
+            if ($this->enabled && $this->manager->isActive()) {
+                $this->local()->flush();
+                $this->manager->getTracker()->clearPendingRequests();
+            }
         }
-
-        return $this->redisStore->flush();
     }
 
     public function getPrefix(): string

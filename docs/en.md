@@ -128,8 +128,18 @@ Horizon's master and supervisor processes, and `queue:work --once`.
 Queue daemon workers get their own in-memory local cache (regardless of `local_cache.driver`), bounded by
 `queue.max_entries` with least-recently-used eviction. Values are stored serialized, so jobs cannot mutate cached
 objects. Invalidations are processed on every worker loop and before every job, and a local hit inside a running job
-drains pending invalidations first, so a long job never reads a value that was invalidated while it ran. A worker
-forked from an activated parent resets its local state and activates again on its next loop.
+drains pending invalidations first, so a long job sees invalidations on a best-effort basis, bounded by invalidation
+delivery latency. A worker forked from an activated parent resets its local state and activates again on its next loop.
+
+If enabling tracking fails (for example during a Redis outage), the failure is reported and that loop passes through to
+Redis; Recall retries on a later loop. Queue activation runs in a `Looping` listener: a third-party `Looping` listener
+that returns a non-null value stops Laravel's `until()` dispatch before Recall runs, and Recall then stays pass-through.
+
+## Lost Connections
+
+If the invalidation connection drops, or Laravel replaces the Redis client that tracking was enabled on (for example
+after a "went away" error), Recall flushes the local cache, reconnects, and enables tracking again before serving more
+local hits, as the Redis client-side caching documentation recommends.
 
 # Configuration
 
@@ -227,9 +237,15 @@ By default each Octane worker builds its own Swoole Table, so every worker warms
 `RECALL_SHARED_TABLE=true` (swoole driver under Octane only) to use a single table shared by every worker on the server.
 Recall registers two Octane tables, `recall` and `recall_epochs`, in `octane.tables` for you; existing entries are kept.
 
+- Requires `cache_prefixes`: shared mode relies on `CLIENT TRACKING ... BCAST`, which Recall only enables when
+  `cache_prefixes` is non-empty. Without prefixes every worker falls back to its own per-worker table, because default
+  tracking only notifies the worker that filled a key.
 - Memory: one table per server instead of one per worker. `table_size` and `value_size` size that single table.
 - Correctness: every worker still receives every invalidation, and `epoch_stripes` counters stop a read that raced an
-  invalidation from refilling the table with a stale value.
+  invalidation from refilling the table with a stale value. A full table skips the fill instead of failing the read.
+- Live tables win: Recall uses the shared tables only if both exist in the running server, and takes the value size and
+  stripe count from them. Changing `shared`, `table_size`, `value_size` or `epoch_stripes` needs a full `octane:stop`
+  and `octane:start`, not `octane:reload`.
 - Outside Octane, local caching only happens in queue daemon workers, which use their own in-memory cache.
 
 ## Octane Listeners

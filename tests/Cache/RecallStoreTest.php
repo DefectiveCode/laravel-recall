@@ -414,7 +414,7 @@ class RecallStoreTest extends TestCase
         $this->assertSame($lock, $store->restoreLock('my-lock', 'owner-token'));
     }
 
-    public function testWritePathsForgetTheLocalCopy(): void
+    public function testItWritePathsForgetTheLocalCopy(): void
     {
         $redisStore = $this->redisStoreWithPrefix();
         $redisStore->shouldReceive('put')->once()->andReturn(true);
@@ -438,7 +438,7 @@ class RecallStoreTest extends TestCase
         $store->forget('b');
     }
 
-    public function testWriteForgetsTheLocalCopyWhenRedisThrows(): void
+    public function testItWriteForgetsTheLocalCopyWhenRedisThrows(): void
     {
         $redisStore = $this->redisStoreWithPrefix();
         $redisStore->shouldReceive('put')->once()->andThrow(new RuntimeException('down'));
@@ -453,7 +453,7 @@ class RecallStoreTest extends TestCase
         $store->put('a', 1, 60);
     }
 
-    public function testWriteDoesNotForgetKeysOutsideCachePrefixes(): void
+    public function testItWriteDoesNotForgetKeysOutsideCachePrefixes(): void
     {
         $redisStore = Mockery::mock(RedisStore::class);
         $redisStore->shouldReceive('put')->once()->andReturn(true);
@@ -468,7 +468,7 @@ class RecallStoreTest extends TestCase
         $store->put('other:1', 1, 60);
     }
 
-    public function testGetFillsAFencedLocalCacheWithTheFenceTakenBeforeRedis(): void
+    public function testItGetFillsAFencedLocalCacheWithTheFenceTakenBeforeRedis(): void
     {
         $redisStore = $this->redisStoreWithPrefix();
         $redisStore->shouldReceive('get')->with('a')->once()->andReturn('v');

@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall;
 
 use Redis;
+use Swoole\Table;
 use RuntimeException;
+use ReflectionProperty;
 use Swoole\Http\Server;
-use Laravel\Octane\Facades\Octane;
+use Laravel\Octane\Swoole\WorkerState;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
 use DefectiveCode\Recall\Cache\ArrayLocalCache;
@@ -31,6 +33,8 @@ class RecallManager
     protected ?RecallStore $store = null;
 
     protected bool $trackingEnabled = false;
+
+    protected ?object $trackedClient = null;
 
     protected bool $active = false;
 
@@ -86,21 +90,34 @@ class RecallManager
         $this->localCache = new ArrayLocalCache([
             'default_ttl' => (int) ($this->app['config']['recall.local_cache.default_ttl'] ?? 3600),
             'max_entries' => (int) ($this->app['config']['recall.queue.max_entries'] ?? 1000),
+            'value_size' => (int) ($this->app['config']['recall.local_cache.value_size'] ?? 8192),
         ]);
     }
 
     public function isActive(): bool
     {
         if ($this->active && getmypid() !== $this->activePid) {
-            $this->subscriber = null;
-            $this->tracker = null;
-            $this->localCache = null;
-            $this->trackingEnabled = false;
-            $this->active = false;
-            $this->queueMode = false;
+            $this->reset();
         }
 
         return $this->active;
+    }
+
+    public function deactivate(): void
+    {
+        $this->disconnect();
+        $this->reset();
+    }
+
+    protected function reset(): void
+    {
+        $this->subscriber = null;
+        $this->tracker = null;
+        $this->localCache = null;
+        $this->trackedClient = null;
+        $this->trackingEnabled = false;
+        $this->active = false;
+        $this->queueMode = false;
     }
 
     public function isQueueMode(): bool
@@ -133,15 +150,46 @@ class RecallManager
      */
     protected function makeSwooleCache(array $config): LocalCacheInterface
     {
-        if (($config['shared'] ?? false) && $this->app->bound(Server::class)) {
-            return new SharedSwooleTableCache(
-                Octane::table(RecallServiceProvider::DATA_TABLE),
-                Octane::table(RecallServiceProvider::EPOCH_TABLE),
-                $config,
-            );
+        $tables = $this->sharedTables($config);
+
+        if ($tables !== null) {
+            return new SharedSwooleTableCache($tables[0], $tables[1], $tables[2]);
         }
 
         return new SwooleTableCache($config);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array{0: Table, 1: Table, 2: array<string, mixed>}|null
+     */
+    protected function sharedTables(array $config): ?array
+    {
+        if (
+            ! ($config['shared'] ?? false)
+            || empty($this->app['config']['recall.cache_prefixes'])
+            || ! $this->app->bound(Server::class)
+            || ! class_exists(WorkerState::class)
+        ) {
+            return null;
+        }
+
+        $tables = $this->app->make(WorkerState::class)->tables ?? [];
+        $data = $tables[RecallServiceProvider::DATA_TABLE] ?? null;
+        $epochs = $tables[RecallServiceProvider::EPOCH_TABLE] ?? null;
+
+        if (! $data instanceof Table || ! $epochs instanceof Table) {
+            return null;
+        }
+
+        $columns = property_exists($data, 'columns') ? (new ReflectionProperty($data, 'columns'))->getValue($data) : [];
+        $config['value_size'] = (int) ($columns['value'][1] ?? $config['value_size'] ?? 8192);
+        $config['epoch_stripes'] = min(
+            (int) ($config['epoch_stripes'] ?? 1024),
+            intdiv(method_exists($epochs, 'getSize') ? $epochs->getSize() : PHP_INT_MAX, 2),
+        );
+
+        return $config['epoch_stripes'] < 1 ? null : [$data, $epochs, $config];
     }
 
     public function getTracker(): ClientTracker
@@ -166,16 +214,36 @@ class RecallManager
         }
 
         $this->enableClientTracking($subscriber->getConnectionId());
+        $this->trackedClient = $this->dataClient();
         $this->trackingEnabled = true;
     }
 
     public function processInvalidations(): void
     {
+        if ($this->trackingEnabled && $this->trackingLost()) {
+            $this->getLocalCache()->flush();
+            $this->getTracker()->clearPendingRequests();
+            $this->disconnect();
+        }
+
         if (! $this->trackingEnabled) {
             $this->enableTracking();
         }
 
         $this->getTracker()->processInvalidations();
+    }
+
+    protected function trackingLost(): bool
+    {
+        return ! $this->getSubscriber()->isConnected() || $this->trackedClient !== $this->dataClient();
+    }
+
+    protected function dataClient(): object
+    {
+        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
+        $connectionName = $this->app['config']["cache.stores.{$redisStoreName}.connection"] ?? 'default';
+
+        return $this->app['redis']->connection($connectionName)->client();
     }
 
     public function flushLocalCache(): void
@@ -189,6 +257,7 @@ class RecallManager
             $this->subscriber->close();
         }
 
+        $this->trackedClient = null;
         $this->trackingEnabled = false;
     }
 
