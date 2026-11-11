@@ -57,6 +57,37 @@ class SwooleTableCacheTest extends TestCase
         $this->assertEquals('test', $retrieved->name);
     }
 
+    public function testItDoesNotStoreAnOversizeValue(): void
+    {
+        $cache = new SwooleTableCache(['table_size' => 64, 'value_size' => 1024]);
+
+        $cache->put('big', 'small');
+        $stored = $cache->put('big', str_repeat('x', 4096));
+
+        $this->assertFalse($stored);
+        $this->assertNull($cache->get('big'));
+    }
+
+    public function testItStoresAValueAtTheSizeLimit(): void
+    {
+        $cache = new SwooleTableCache(['table_size' => 64, 'value_size' => 1024]);
+        $value = str_repeat('x', 1014);
+
+        $this->assertSame(1024, strlen(serialize($value)));
+        $this->assertTrue($cache->put('exact', $value));
+        $this->assertSame($value, $cache->get('exact'));
+    }
+
+    public function testItDoesNotStoreAValueOneByteOverTheSizeLimit(): void
+    {
+        $cache = new SwooleTableCache(['table_size' => 64, 'value_size' => 1024]);
+        $value = str_repeat('x', 1015);
+
+        $this->assertSame(1025, strlen(serialize($value)));
+        $this->assertFalse($cache->put('over', $value));
+        $this->assertNull($cache->get('over'));
+    }
+
     public function testForgetRemovesKey(): void
     {
         $cache = new SwooleTableCache;

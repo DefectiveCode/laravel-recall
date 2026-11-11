@@ -16,6 +16,8 @@ class SwooleTableCache implements LocalCacheInterface
 
     protected int $defaultTtl;
 
+    protected int $valueSize;
+
     /**
      * @param  array{key_prefix?: string, default_ttl?: int, table_size?: int, value_size?: int}  $config
      */
@@ -27,10 +29,10 @@ class SwooleTableCache implements LocalCacheInterface
         $this->defaultTtl = $config['default_ttl'] ?? 3600;
 
         $tableSize = $config['table_size'] ?? 65536;
-        $valueSize = $config['value_size'] ?? 8192;
+        $this->valueSize = $config['value_size'] ?? 8192;
 
         $this->table = new Table($tableSize);
-        $this->table->column('value', Table::TYPE_STRING, $valueSize);
+        $this->table->column('value', Table::TYPE_STRING, $this->valueSize);
         $this->table->column('expires_at', Table::TYPE_INT);
         $this->table->create();
     }
@@ -58,8 +60,16 @@ class SwooleTableCache implements LocalCacheInterface
         $effectiveTtl = $ttl > 0 ? $ttl : $this->defaultTtl;
         $expiresAt = $effectiveTtl > 0 ? time() + $effectiveTtl : 0;
 
+        $serialized = serialize($value);
+
+        if (strlen($serialized) > $this->valueSize) {
+            $this->table->del($this->hashKey($key));
+
+            return false;
+        }
+
         return $this->table->set($this->hashKey($key), [
-            'value' => serialize($value),
+            'value' => $serialized,
             'expires_at' => $expiresAt,
         ]);
     }
