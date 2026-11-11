@@ -219,7 +219,7 @@ same worker. Best for Swoole/OpenSwoole environments.
 **Configuration tips:**
 
 - `table_size`: Must be a power of 2 (e.g., 65536, 131072). Determines max number of entries.
-- `value_size`: Maximum bytes for serialized values. Larger values are silently truncated.
+- `value_size`: Maximum bytes for serialized values. Larger values are not stored locally and are read from Redis every time.
 
 ### Shared Table Mode
 
