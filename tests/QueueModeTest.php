@@ -52,7 +52,7 @@ class QueueModeTest extends TestCase
     {
         $manager = Mockery::mock(RecallManager::class);
         $manager->shouldReceive('activateForQueue')->once();
-        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('isQueueMode')->andReturn(true);
         $manager->shouldReceive('processInvalidations')->once();
 
         $this->assertNull((new ProcessQueueInvalidations($manager))->handle(new Looping('redis', 'default')));
@@ -62,16 +62,17 @@ class QueueModeTest extends TestCase
     {
         $manager = Mockery::mock(RecallManager::class);
         $manager->shouldNotReceive('activateForQueue');
-        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('isQueueMode')->andReturn(true);
         $manager->shouldReceive('processInvalidations')->once();
 
         (new ProcessQueueInvalidations($manager))->handle(new JobProcessing('redis', Mockery::mock(Job::class)));
     }
 
-    public function testItDoesNotDrainOnJobProcessingWhenInactive(): void
+    public function testItDoesNotDrainOnJobProcessingWhenNotInQueueMode(): void
     {
         $manager = Mockery::mock(RecallManager::class);
-        $manager->shouldReceive('isActive')->andReturn(false);
+        $manager->shouldReceive('isQueueMode')->andReturn(false);
+        $manager->shouldNotReceive('deactivate');
         $manager->shouldNotReceive('processInvalidations');
 
         (new ProcessQueueInvalidations($manager))->handle(new JobProcessing('redis', Mockery::mock(Job::class)));
@@ -181,7 +182,7 @@ class QueueModeTest extends TestCase
     {
         $manager = Mockery::mock(RecallManager::class);
         $manager->shouldReceive('activateForQueue')->once();
-        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('isQueueMode')->andReturn(true);
         $manager->shouldReceive('processInvalidations')->once()->andThrow(new RuntimeException('redis down'));
         $manager->shouldReceive('deactivate')->once();
 
@@ -486,7 +487,7 @@ class QueueModeTest extends TestCase
     {
         $manager = Mockery::mock(RecallManager::class);
         $manager->shouldReceive('activateForQueue');
-        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('isQueueMode')->andReturn(true);
         $manager->shouldReceive('processInvalidations')->andThrow(new RuntimeException('down'));
         $manager->shouldReceive('deactivate');
 
@@ -504,5 +505,15 @@ class QueueModeTest extends TestCase
         $this->bootProviderWith(true, true);
 
         $this->assertTrue($this->app['events']->hasListeners(TaskReceived::class));
+    }
+
+    public function testItDoesNotDeactivateAnOctaneWorkerOnJobProcessing(): void
+    {
+        $manager = new RecallManager($this->app);
+        $manager->activate();
+
+        (new ProcessQueueInvalidations($manager))->handle(new JobProcessing('sync', Mockery::mock(Job::class)));
+
+        $this->assertTrue($manager->isActive());
     }
 }

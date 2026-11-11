@@ -6,6 +6,7 @@ namespace DefectiveCode\Recall\Redis;
 
 use DefectiveCode\Recall\Protocol\RespParser;
 use DefectiveCode\Recall\Protocol\RespWriter;
+use DefectiveCode\Recall\Protocol\Types\Push;
 use DefectiveCode\Recall\Protocol\Types\Error;
 use DefectiveCode\Recall\Protocol\Types\Integer;
 use DefectiveCode\Recall\Protocol\Types\RespNull;
@@ -73,7 +74,15 @@ class InvalidationSubscriber
         $command = $this->writer->subscribe(self::INVALIDATION_CHANNEL);
         $this->socket->write($command);
 
-        $this->parser->parse();
+        $reply = $this->parser->parse();
+
+        if (! $this->isSubscribeConfirmation($reply)) {
+            $detail = $reply instanceof Error ? $reply->getValue() : 'unexpected reply';
+            $this->close();
+
+            throw new ConnectionException("Failed to subscribe to the invalidation channel: {$detail}");
+        }
+
         $this->socket->setNonBlocking();
         $this->subscribed = true;
     }
@@ -116,6 +125,17 @@ class InvalidationSubscriber
     public function isConnected(): bool
     {
         return $this->socket !== null && $this->socket->isConnected();
+    }
+
+    protected function isSubscribeConfirmation(mixed $reply): bool
+    {
+        if (! $reply instanceof RespArray && ! $reply instanceof Push) {
+            return false;
+        }
+
+        $first = $reply->getElements()[0] ?? null;
+
+        return $first instanceof BulkString && strtolower($first->getValue()) === 'subscribe';
     }
 
     /**

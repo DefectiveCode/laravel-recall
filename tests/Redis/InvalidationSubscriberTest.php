@@ -194,6 +194,29 @@ class InvalidationSubscriberTest extends TestCase
         }
     }
 
+    public function testItFailsTheConnectWhenSubscribeIsRejected(): void
+    {
+        $peer = $this->attachSocket([]);
+        fwrite($peer, "-NOPERM this user has no permissions to access one of the channels\r\n");
+
+        try {
+            $this->subscriber->subscribe();
+            $this->fail('Expected a ConnectionException');
+        } catch (ConnectionException) {
+            $this->assertFalse($this->subscriber->isConnected());
+        }
+    }
+
+    public function testItFailsTheConnectWhenTheSubscribeReplyIsUnexpected(): void
+    {
+        $peer = $this->attachSocket([]);
+        fwrite($peer, "+OK\r\n");
+
+        $this->expectException(ConnectionException::class);
+
+        $this->subscriber->subscribe();
+    }
+
     /**
      * @param  array<string, mixed>  $config
      * @return resource

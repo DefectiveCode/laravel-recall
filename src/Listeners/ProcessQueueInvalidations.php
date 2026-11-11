@@ -23,7 +23,7 @@ class ProcessQueueInvalidations
             $this->manager->activateForQueue();
         }
 
-        if (! $this->manager->isActive()) {
+        if (! $this->manager->isQueueMode()) {
             return;
         }
 

@@ -140,8 +140,8 @@ that returns a non-null value stops Laravel's `until()` dispatch before Recall r
 With `cache_prefixes` set, tracking is enabled on the invalidation connection itself (`CLIENT TRACKING ON REDIRECT <own id> BCAST PREFIX ...`
 before `SUBSCRIBE`), so it never depends on the data connection and every reconnect starts from a clean connection. Without
 `cache_prefixes`, tracking is enabled on the data connection, and a silent data-connection reconnect (for example Redis
-`timeout` closing an idle connection) drops tracking until Recall next detects the replaced client. Set `cache_prefixes`
-to avoid this.
+`timeout` closing an idle connection) drops tracking without Recall detecting it, because phpredis and Predis reconnect inside the same client object.
+Set `cache_prefixes` (BCAST), where the data connection carries no tracking, to avoid this.
 
 If the invalidation connection drops, or Laravel replaces the Redis client that tracking was enabled on (for example
 after a "went away" error), Recall flushes the local cache, reconnects, and enables tracking again before serving more
