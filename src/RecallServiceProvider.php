@@ -6,15 +6,19 @@ namespace DefectiveCode\Recall;
 
 use Illuminate\Cache\Repository;
 use Illuminate\Cache\CacheManager;
+use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Octane\Events\WorkerStopping;
+use Illuminate\Queue\Events\JobProcessing;
 use Laravel\Octane\Events\RequestReceived;
 use Illuminate\Contracts\Foundation\Application;
 use DefectiveCode\Recall\Listeners\WarmConnections;
 use DefectiveCode\Recall\Listeners\CloseConnections;
 use DefectiveCode\Recall\Listeners\ProcessInvalidations;
+use DefectiveCode\Recall\Listeners\ProcessQueueInvalidations;
+use Illuminate\Queue\Events\WorkerStopping as QueueWorkerStopping;
 
 class RecallServiceProvider extends ServiceProvider
 {
@@ -43,6 +47,7 @@ class RecallServiceProvider extends ServiceProvider
 
         $this->registerCacheDriver();
         $this->registerOctaneListeners();
+        $this->registerQueueListeners();
     }
 
     protected function registerOctaneTables(): void
@@ -109,5 +114,20 @@ class RecallServiceProvider extends ServiceProvider
         }
 
         $events->listen(WorkerStopping::class, CloseConnections::class);
+    }
+
+    protected function registerQueueListeners(): void
+    {
+        if (! ($this->app['config']['recall.enabled'] ?? true) || ! ($this->app['config']['recall.listeners.queue'] ?? true)) {
+            return;
+        }
+
+        $this->app->make(RecallManager::class);
+
+        $events = $this->app['events'];
+
+        $events->listen(Looping::class, ProcessQueueInvalidations::class);
+        $events->listen(JobProcessing::class, ProcessQueueInvalidations::class);
+        $events->listen(QueueWorkerStopping::class, CloseConnections::class);
     }
 }

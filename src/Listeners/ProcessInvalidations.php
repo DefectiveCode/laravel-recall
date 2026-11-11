@@ -16,6 +16,7 @@ class ProcessInvalidations
 
     public function handle(RequestReceived|TickReceived $event): void
     {
+        $this->manager->activate();
         $this->manager->processInvalidations();
     }
 }

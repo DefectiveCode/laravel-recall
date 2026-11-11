@@ -112,6 +112,25 @@ Recall automatically integrates with Laravel Octane when available:
 
 No additional configuration is required. The integration is automatic when Octane is installed.
 
+## Where Local Caching Happens
+
+Recall only caches locally in processes that also process invalidations:
+
+- **Octane workers**: activated on worker start and on every request.
+- **Queue daemon workers** (`queue:work`, Horizon workers): activated on the first queue loop, using a per-process
+  in-memory cache.
+
+Everything else passes straight through to Redis with no local cache: artisan commands, `schedule:run`,
+Horizon's master and supervisor processes, and `queue:work --once`.
+
+## Queue Workers
+
+Queue daemon workers get their own in-memory local cache (regardless of `local_cache.driver`), bounded by
+`queue.max_entries` with least-recently-used eviction. Values are stored serialized, so jobs cannot mutate cached
+objects. Invalidations are processed on every worker loop and before every job, and a local hit inside a running job
+drains pending invalidations first, so a long job never reads a value that was invalidated while it ran. A worker
+forked from an activated parent resets its local state and activates again on its next loop.
+
 # Configuration
 
 Publish the configuration file:
@@ -211,7 +230,7 @@ Recall registers two Octane tables, `recall` and `recall_epochs`, in `octane.tab
 - Memory: one table per server instead of one per worker. `table_size` and `value_size` size that single table.
 - Correctness: every worker still receives every invalidation, and `epoch_stripes` counters stop a read that raced an
   invalidation from refilling the table with a stale value.
-- Outside Octane (queue workers, artisan) the per-process table is used instead.
+- Outside Octane, local caching only happens in queue daemon workers, which use their own in-memory cache.
 
 ## Octane Listeners
 
@@ -222,6 +241,14 @@ Recall registers two Octane tables, `recall` and `recall_epochs`, in `octane.tab
 
     // Process invalidations on tick events (more responsive, slight overhead)
     'tick' => env('RECALL_LISTEN_TICK', false),
+
+    // Local cache and invalidation processing for queue daemon workers
+    'queue' => env('RECALL_LISTEN_QUEUE', true),
+],
+
+'queue' => [
+    // Max entries in each queue worker's local cache (least recently used evicted first)
+    'max_entries' => (int) env('RECALL_QUEUE_MAX_ENTRIES', 1000),
 ],
 ```
 

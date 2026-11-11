@@ -92,6 +92,25 @@ return [
         // Process invalidations on tick events (more responsive, slight overhead).
         'tick' => env('RECALL_LISTEN_TICK', false),
 
+        // Give queue daemon workers (queue:work, Horizon) their own local cache and drain invalidations.
+        'queue' => env('RECALL_LISTEN_QUEUE', true),
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Queue Workers
+    |--------------------------------------------------------------------------
+    |
+    | Queue daemon workers use a per-process in-memory local cache.
+    |
+    */
+
+    'queue' => [
+
+        // Max entries held by each queue worker's local cache. Oldest-used entries are evicted first.
+        'max_entries' => (int) env('RECALL_QUEUE_MAX_ENTRIES', 1000),
+
     ],
 
 ];

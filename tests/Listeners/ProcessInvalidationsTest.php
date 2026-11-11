@@ -27,6 +27,7 @@ class ProcessInvalidationsTest extends TestCase
     public function testHandleCallsProcessInvalidationsOnRequestReceived(): void
     {
         $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activate')->once();
         $manager->shouldReceive('processInvalidations')->once();
 
         $listener = new ProcessInvalidations($manager);
@@ -39,6 +40,7 @@ class ProcessInvalidationsTest extends TestCase
     public function testHandleCallsProcessInvalidationsOnTickReceived(): void
     {
         $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activate')->once();
         $manager->shouldReceive('processInvalidations')->once();
 
         $listener = new ProcessInvalidations($manager);

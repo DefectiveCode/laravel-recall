@@ -10,6 +10,7 @@ use Swoole\Http\Server;
 use Laravel\Octane\Facades\Octane;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
+use DefectiveCode\Recall\Cache\ArrayLocalCache;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use Illuminate\Contracts\Foundation\Application;
@@ -31,6 +32,12 @@ class RecallManager
 
     protected bool $trackingEnabled = false;
 
+    protected bool $active = false;
+
+    protected bool $queueMode = false;
+
+    protected int $activePid = 0;
+
     public function __construct(
         protected Application $app,
     ) {}
@@ -46,7 +53,7 @@ class RecallManager
 
         $this->store = new RecallStore(
             redisStore: $redisStore,
-            localCache: $this->getLocalCache(),
+            localCache: fn (): LocalCacheInterface => $this->getLocalCache(),
             manager: $this,
             config: [
                 'enabled' => $this->app['config']['recall.enabled'] ?? true,
@@ -55,6 +62,50 @@ class RecallManager
         );
 
         return $this->store;
+    }
+
+    public function activate(): void
+    {
+        if ($this->isActive()) {
+            return;
+        }
+
+        $this->active = true;
+        $this->activePid = (int) getmypid();
+    }
+
+    public function activateForQueue(): void
+    {
+        if ($this->isActive()) {
+            return;
+        }
+
+        $this->activate();
+        $this->queueMode = true;
+        $this->tracker = null;
+        $this->localCache = new ArrayLocalCache([
+            'default_ttl' => (int) ($this->app['config']['recall.local_cache.default_ttl'] ?? 3600),
+            'max_entries' => (int) ($this->app['config']['recall.queue.max_entries'] ?? 1000),
+        ]);
+    }
+
+    public function isActive(): bool
+    {
+        if ($this->active && getmypid() !== $this->activePid) {
+            $this->subscriber = null;
+            $this->tracker = null;
+            $this->localCache = null;
+            $this->trackingEnabled = false;
+            $this->active = false;
+            $this->queueMode = false;
+        }
+
+        return $this->active;
+    }
+
+    public function isQueueMode(): bool
+    {
+        return $this->isActive() && $this->queueMode;
     }
 
     public function getSubscriber(): InvalidationSubscriber
