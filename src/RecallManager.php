@@ -6,6 +6,8 @@ namespace DefectiveCode\Recall;
 
 use Redis;
 use RuntimeException;
+use Swoole\Http\Server;
+use Laravel\Octane\Facades\Octane;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
@@ -13,6 +15,7 @@ use DefectiveCode\Recall\Tracking\ClientTracker;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Redis\Connections\PredisConnection;
 use Illuminate\Redis\Connections\PhpRedisConnection;
+use DefectiveCode\Recall\Cache\SharedSwooleTableCache;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
@@ -69,9 +72,25 @@ class RecallManager
         $config = $this->app['config']['recall.local_cache'] ?? [];
 
         return $this->localCache = match ($driver) {
-            'swoole' => new SwooleTableCache($config),
+            'swoole' => $this->makeSwooleCache($config),
             default => new LocalCache($config),
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    protected function makeSwooleCache(array $config): LocalCacheInterface
+    {
+        if (($config['shared'] ?? false) && $this->app->bound(Server::class)) {
+            return new SharedSwooleTableCache(
+                Octane::table(RecallServiceProvider::DATA_TABLE),
+                Octane::table(RecallServiceProvider::EPOCH_TABLE),
+                $config,
+            );
+        }
+
+        return new SwooleTableCache($config);
     }
 
     public function getTracker(): ClientTracker

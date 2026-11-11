@@ -173,6 +173,12 @@ This is useful when you have high-volume keys that change frequently and shouldn
 
     // Max bytes per value in Swoole Table (only for swoole driver)
     'value_size' => (int) env('RECALL_SWOOLE_VALUE_SIZE', 8192),
+
+    // Share one table across all Octane workers (swoole driver + Octane only)
+    'shared' => env('RECALL_SHARED_TABLE', false),
+
+    // Epoch counters used to fence local fills against invalidations (only when shared)
+    'epoch_stripes' => (int) env('RECALL_EPOCH_STRIPES', 1024),
 ],
 ```
 
@@ -195,6 +201,17 @@ same worker. Best for Swoole/OpenSwoole environments.
 
 - `table_size`: Must be a power of 2 (e.g., 65536, 131072). Determines max number of entries.
 - `value_size`: Maximum bytes for serialized values. Larger values are silently truncated.
+
+### Shared Table Mode
+
+By default each Octane worker builds its own Swoole Table, so every worker warms and holds its own copy. Set
+`RECALL_SHARED_TABLE=true` (swoole driver under Octane only) to use a single table shared by every worker on the server.
+Recall registers two Octane tables, `recall` and `recall_epochs`, in `octane.tables` for you; existing entries are kept.
+
+- Memory: one table per server instead of one per worker. `table_size` and `value_size` size that single table.
+- Correctness: every worker still receives every invalidation, and `epoch_stripes` counters stop a read that raced an
+  invalidation from refilling the table with a stale value.
+- Outside Octane (queue workers, artisan) the per-process table is used instead.
 
 ## Octane Listeners
 

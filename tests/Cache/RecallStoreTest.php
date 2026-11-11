@@ -16,6 +16,7 @@ use DefectiveCode\Recall\Cache\RecallStore;
 use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use DefectiveCode\Recall\Tracking\PendingRequest;
+use DefectiveCode\Recall\Contracts\FencedLocalCache;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
@@ -214,7 +215,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $manager = Mockery::mock(RecallManager::class);
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->put('key', 'value', 60));
     }
@@ -227,7 +228,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $manager = Mockery::mock(RecallManager::class);
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->putMany(['key1' => 'value1'], 60));
     }
@@ -240,7 +241,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $manager = Mockery::mock(RecallManager::class);
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertEquals(5, $store->increment('counter'));
     }
@@ -253,7 +254,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $manager = Mockery::mock(RecallManager::class);
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertEquals(3, $store->decrement('counter'));
     }
@@ -266,7 +267,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $manager = Mockery::mock(RecallManager::class);
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->forever('key', 'value'));
     }
@@ -320,7 +321,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $manager = Mockery::mock(RecallManager::class);
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->forget('key'));
     }
@@ -411,5 +412,97 @@ class RecallStoreTest extends TestCase
         $store = new RecallStore($redisStore, $localCache, $manager);
 
         $this->assertSame($lock, $store->restoreLock('my-lock', 'owner-token'));
+    }
+
+    public function testWritePathsForgetTheLocalCopy(): void
+    {
+        $redisStore = $this->redisStoreWithPrefix();
+        $redisStore->shouldReceive('put')->once()->andReturn(true);
+        $redisStore->shouldReceive('putMany')->once()->andReturn(true);
+        $redisStore->shouldReceive('increment')->once()->andReturn(2);
+        $redisStore->shouldReceive('decrement')->once()->andReturn(1);
+        $redisStore->shouldReceive('forever')->once()->andReturn(true);
+        $redisStore->shouldReceive('forget')->once()->andReturn(true);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldReceive('forget')->with('p:a')->times(5)->andReturn(true);
+        $localCache->shouldReceive('forget')->with('p:b')->times(2)->andReturn(true);
+
+        $store = new RecallStore($redisStore, $localCache, Mockery::mock(RecallManager::class));
+
+        $store->put('a', 1, 60);
+        $store->putMany(['a' => 1, 'b' => 2], 60);
+        $store->increment('a');
+        $store->decrement('a');
+        $store->forever('a', 1);
+        $store->forget('b');
+    }
+
+    public function testWriteForgetsTheLocalCopyWhenRedisThrows(): void
+    {
+        $redisStore = $this->redisStoreWithPrefix();
+        $redisStore->shouldReceive('put')->once()->andThrow(new RuntimeException('down'));
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldReceive('forget')->with('p:a')->once()->andReturn(true);
+
+        $store = new RecallStore($redisStore, $localCache, Mockery::mock(RecallManager::class));
+
+        $this->expectException(RuntimeException::class);
+
+        $store->put('a', 1, 60);
+    }
+
+    public function testWriteDoesNotForgetKeysOutsideCachePrefixes(): void
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('put')->once()->andReturn(true);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldNotReceive('forget');
+
+        $store = new RecallStore($redisStore, $localCache, Mockery::mock(RecallManager::class), [
+            'cache_prefixes' => ['users:'],
+        ]);
+
+        $store->put('other:1', 1, 60);
+    }
+
+    public function testGetFillsAFencedLocalCacheWithTheFenceTakenBeforeRedis(): void
+    {
+        $redisStore = $this->redisStoreWithPrefix();
+        $redisStore->shouldReceive('get')->with('a')->once()->andReturn('v');
+
+        $localCache = Mockery::mock(FencedLocalCache::class);
+        $localCache->shouldReceive('get')->with('p:a')->once()->andReturn(null);
+        $localCache->shouldReceive('fence')->with('p:a')->once()->andReturn(7);
+        $localCache->shouldReceive('putFenced')->with('p:a', 'v', 7)->once()->andReturn(true);
+        $localCache->shouldNotReceive('put');
+
+        $pendingRequest = new PendingRequest('p:a');
+        $tracker = Mockery::mock(ClientTracker::class);
+        $tracker->shouldReceive('registerPendingRequest')->andReturn($pendingRequest);
+        $tracker->shouldReceive('completePendingRequest')->andReturn(true);
+
+        $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('getTracker')->andReturn($tracker);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertSame('v', $store->get('a'));
+    }
+
+    protected function redisStoreWithPrefix(): RedisStore
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('getPrefix')->andReturn('p:');
+
+        $connection = Mockery::mock(PhpRedisConnection::class);
+        $redis = Mockery::mock(Redis::class);
+        $redis->shouldReceive('getOption')->with(Redis::OPT_PREFIX)->andReturn('');
+        $connection->shouldReceive('client')->andReturn($redis);
+        $redisStore->shouldReceive('connection')->andReturn($connection);
+
+        return $redisStore;
     }
 }

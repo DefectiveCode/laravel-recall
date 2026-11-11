@@ -12,6 +12,7 @@ use Illuminate\Contracts\Cache\Store;
 use DefectiveCode\Recall\RecallManager;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Redis\Connections\PredisConnection;
+use DefectiveCode\Recall\Contracts\FencedLocalCache;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
@@ -56,11 +57,17 @@ class RecallStore implements LockProvider, Store
             return $localValue;
         }
 
+        $fence = $this->localCache instanceof FencedLocalCache ? $this->localCache->fence($redisKey) : null;
+
         $pendingRequest = $this->manager->getTracker()->registerPendingRequest($redisKey);
         $value = $this->redisStore->get($key);
 
         if ($value !== null && $this->manager->getTracker()->completePendingRequest($pendingRequest)) {
-            $this->localCache->put($redisKey, $value);
+            if ($fence !== null && $this->localCache instanceof FencedLocalCache) {
+                $this->localCache->putFenced($redisKey, $value, $fence);
+            } else {
+                $this->localCache->put($redisKey, $value);
+            }
         }
 
         return $value;
@@ -83,7 +90,11 @@ class RecallStore implements LockProvider, Store
 
     public function put($key, $value, $seconds): bool
     {
-        return $this->redisStore->put($key, $value, $seconds);
+        try {
+            return $this->redisStore->put($key, $value, $seconds);
+        } finally {
+            $this->forgetLocally($key);
+        }
     }
 
     /**
@@ -91,22 +102,40 @@ class RecallStore implements LockProvider, Store
      */
     public function putMany(array $values, $seconds): bool
     {
-        return $this->redisStore->putMany($values, $seconds);
+        try {
+            return $this->redisStore->putMany($values, $seconds);
+        } finally {
+            foreach (array_keys($values) as $key) {
+                $this->forgetLocally((string) $key);
+            }
+        }
     }
 
     public function increment($key, $value = 1): int|bool
     {
-        return $this->redisStore->increment($key, $value);
+        try {
+            return $this->redisStore->increment($key, $value);
+        } finally {
+            $this->forgetLocally($key);
+        }
     }
 
     public function decrement($key, $value = 1): int|bool
     {
-        return $this->redisStore->decrement($key, $value);
+        try {
+            return $this->redisStore->decrement($key, $value);
+        } finally {
+            $this->forgetLocally($key);
+        }
     }
 
     public function forever($key, $value): bool
     {
-        return $this->redisStore->forever($key, $value);
+        try {
+            return $this->redisStore->forever($key, $value);
+        } finally {
+            $this->forgetLocally($key);
+        }
     }
 
     public function touch($key, $seconds): bool
@@ -123,7 +152,11 @@ class RecallStore implements LockProvider, Store
 
     public function forget($key): bool
     {
-        return $this->redisStore->forget($key);
+        try {
+            return $this->redisStore->forget($key);
+        } finally {
+            $this->forgetLocally($key);
+        }
     }
 
     public function flush(): bool
@@ -147,6 +180,13 @@ class RecallStore implements LockProvider, Store
     public function restoreLock($name, $owner): Lock
     {
         return $this->redisStore->restoreLock($name, $owner);
+    }
+
+    protected function forgetLocally(string $key): void
+    {
+        if ($this->shouldCacheLocally($key)) {
+            $this->localCache->forget($this->getRedisKey($key));
+        }
     }
 
     protected function shouldCacheLocally(string $key): bool

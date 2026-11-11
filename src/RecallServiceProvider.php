@@ -18,6 +18,10 @@ use DefectiveCode\Recall\Listeners\ProcessInvalidations;
 
 class RecallServiceProvider extends ServiceProvider
 {
+    public const DATA_TABLE = 'recall';
+
+    public const EPOCH_TABLE = 'recall_epochs';
+
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/recall.php', 'recall');
@@ -27,6 +31,8 @@ class RecallServiceProvider extends ServiceProvider
         });
 
         $this->app->alias(RecallManager::class, 'recall');
+
+        $this->registerOctaneTables();
     }
 
     public function boot(): void
@@ -37,6 +43,37 @@ class RecallServiceProvider extends ServiceProvider
 
         $this->registerCacheDriver();
         $this->registerOctaneListeners();
+    }
+
+    protected function registerOctaneTables(): void
+    {
+        $config = $this->app['config'];
+
+        if (
+            ! $config->get('recall.local_cache.shared', false)
+            || $config->get('recall.local_cache.driver') !== 'swoole'
+        ) {
+            return;
+        }
+
+        $dataName = self::DATA_TABLE.':'.$config->get('recall.local_cache.table_size', 65536);
+        $epochName = self::EPOCH_TABLE.':'.((int) $config->get('recall.local_cache.epoch_stripes', 1024) * 2);
+
+        $tables = $config->get('octane.tables', []);
+
+        foreach ($tables as $name => $columns) {
+            if (str_starts_with((string) $name, self::DATA_TABLE.':') || str_starts_with((string) $name, self::EPOCH_TABLE.':')) {
+                unset($tables[$name]);
+            }
+        }
+
+        $tables[$dataName] = [
+            'value' => 'string:'.$config->get('recall.local_cache.value_size', 8192),
+            'expires_at' => 'int',
+        ];
+        $tables[$epochName] = ['epoch' => 'int'];
+
+        $config->set('octane.tables', $tables);
     }
 
     protected function registerCacheDriver(): void

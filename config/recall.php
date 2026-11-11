@@ -65,6 +65,14 @@ return [
         // Max bytes for serialized values in Swoole Table. Only used with swoole driver.
         'value_size' => (int) env('RECALL_SWOOLE_VALUE_SIZE', 8192),
 
+        // Share one Swoole Table across every Octane worker on the server instead of one per worker.
+        // Swoole driver under Octane only. Registers the "recall" and "recall_epochs" Octane tables.
+        'shared' => env('RECALL_SHARED_TABLE', false),
+
+        // Number of epoch counters used to fence local fills against concurrent invalidations.
+        // Only used when "shared" is enabled.
+        'epoch_stripes' => (int) env('RECALL_EPOCH_STRIPES', 1024),
+
     ],
 
     /*
