@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall\Listeners;
 
 use DefectiveCode\Recall\RecallManager;
+use Laravel\Octane\Events\TaskReceived;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\RequestReceived;
 
@@ -14,7 +15,7 @@ class ProcessInvalidations
         protected RecallManager $manager,
     ) {}
 
-    public function handle(RequestReceived|TickReceived $event): void
+    public function handle(RequestReceived|TickReceived|TaskReceived $event): void
     {
         $this->manager->activate();
         $this->manager->processInvalidations();

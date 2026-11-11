@@ -32,7 +32,7 @@ class SharedSwooleTableCache implements FencedLocalCache
         $this->stripes = max(1, $config['epoch_stripes'] ?? 1024);
 
         for ($stripe = 0; $stripe < $this->stripes; $stripe++) {
-            if ($this->epochs->incr((string) $stripe, 'epoch', 0) === false) {
+            if (@$this->epochs->incr((string) $stripe, 'epoch', 0) === false) {
                 throw new LocalCacheException('The recall_epochs table is too small for the configured epoch_stripes.');
             }
         }

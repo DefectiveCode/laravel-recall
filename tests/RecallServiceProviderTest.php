@@ -114,6 +114,13 @@ class RecallServiceProviderTest extends TestCase
         $this->assertSame(['epoch' => 'int'], $tables['recall_epochs:32']);
     }
 
+    public function testItDoesNotRegisterOctaneTablesWithoutCachePrefixes(): void
+    {
+        $this->registerWith(['driver' => 'swoole', 'shared' => true, 'cache_prefixes' => []]);
+
+        $this->assertNull($this->app['config']->get('octane.tables'));
+    }
+
     public function testItKeepsExistingOctaneTablesWhenRegisteringSharedTables(): void
     {
         $existing = ['example:1000' => ['name' => 'string:1000']];
@@ -133,6 +140,7 @@ class RecallServiceProviderTest extends TestCase
     protected function registerWith(array $localCache): void
     {
         $this->app['config']->set('recall.local_cache', $localCache + $this->app['config']['recall.local_cache']);
+        $this->app['config']->set('recall.cache_prefixes', $localCache['cache_prefixes'] ?? ['users:']);
 
         (new RecallServiceProvider($this->app))->register();
     }

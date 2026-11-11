@@ -137,6 +137,12 @@ that returns a non-null value stops Laravel's `until()` dispatch before Recall r
 
 ## Lost Connections
 
+With `cache_prefixes` set, tracking is enabled on the invalidation connection itself (`CLIENT TRACKING ON REDIRECT <own id> BCAST PREFIX ...`
+before `SUBSCRIBE`), so it never depends on the data connection and every reconnect starts from a clean connection. Without
+`cache_prefixes`, tracking is enabled on the data connection, and a silent data-connection reconnect (for example Redis
+`timeout` closing an idle connection) drops tracking until Recall next detects the replaced client. Set `cache_prefixes`
+to avoid this.
+
 If the invalidation connection drops, or Laravel replaces the Redis client that tracking was enabled on (for example
 after a "went away" error), Recall flushes the local cache, reconnects, and enables tracking again before serving more
 local hits, as the Redis client-side caching documentation recommends.
@@ -200,7 +206,7 @@ This is useful when you have high-volume keys that change frequently and shouldn
     // Swoole Table size (power of 2, only for swoole driver)
     'table_size' => (int) env('RECALL_SWOOLE_TABLE_SIZE', 65536),
 
-    // Max bytes per value in Swoole Table (only for swoole driver)
+    // Max bytes per serialized value stored locally (Swoole Table and queue worker cache)
     'value_size' => (int) env('RECALL_SWOOLE_VALUE_SIZE', 8192),
 
     // Share one table across all Octane workers (swoole driver + Octane only)
@@ -229,7 +235,7 @@ same worker. Best for Swoole/OpenSwoole environments.
 **Configuration tips:**
 
 - `table_size`: Must be a power of 2 (e.g., 65536, 131072). Determines max number of entries.
-- `value_size`: Maximum bytes for serialized values. Larger values are not stored locally and are read from Redis every time.
+- `value_size`: Maximum bytes for serialized values (also caps the queue worker cache). Larger values are not stored locally and are read from Redis every time.
 
 ### Shared Table Mode
 
@@ -246,6 +252,8 @@ Recall registers two Octane tables, `recall` and `recall_epochs`, in `octane.tab
 - Live tables win: Recall uses the shared tables only if both exist in the running server, and takes the value size and
   stripe count from them. Changing `shared`, `table_size`, `value_size` or `epoch_stripes` needs a full `octane:stop`
   and `octane:start`, not `octane:reload`.
+- With a single Octane worker there is a short window with no subscriber while that worker recycles, and the shared table
+  survives the recycle, so invalidations sent in that window are missed until `default_ttl`. Run at least two workers.
 - Outside Octane, local caching only happens in queue daemon workers, which use their own in-memory cache.
 
 ## Octane Listeners

@@ -28,7 +28,7 @@ class InvalidationSubscriber
     protected bool $subscribed = false;
 
     /**
-     * @param  array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float, scheme?: string}  $config
+     * @param  array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float, scheme?: string, tracking_prefixes?: array<string>}  $config
      */
     public function __construct(
         protected array $config,
@@ -62,6 +62,12 @@ class InvalidationSubscriber
     {
         if ($this->subscribed) {
             return;
+        }
+
+        $prefixes = $this->config['tracking_prefixes'] ?? [];
+
+        if ($prefixes !== []) {
+            $this->enableBroadcastTracking($prefixes);
         }
 
         $command = $this->writer->subscribe(self::INVALIDATION_CHANNEL);
@@ -110,6 +116,22 @@ class InvalidationSubscriber
     public function isConnected(): bool
     {
         return $this->socket !== null && $this->socket->isConnected();
+    }
+
+    /**
+     * @param  array<string>  $prefixes
+     */
+    protected function enableBroadcastTracking(array $prefixes): void
+    {
+        $this->socket->write($this->writer->trackingBroadcast($this->connectionId, $prefixes));
+
+        $response = $this->parser->parse();
+
+        if ($response instanceof Error) {
+            $this->close();
+
+            throw new ConnectionException("Failed to enable CLIENT TRACKING on the subscriber: {$response->getValue()}");
+        }
     }
 
     protected function fetchConnectionId(): void

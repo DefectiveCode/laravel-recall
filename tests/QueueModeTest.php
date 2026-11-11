@@ -13,6 +13,7 @@ use Illuminate\Events\Dispatcher;
 use Illuminate\Contracts\Queue\Job;
 use Illuminate\Queue\Events\Looping;
 use DefectiveCode\Recall\RecallManager;
+use Laravel\Octane\Events\TaskReceived;
 use Illuminate\Queue\Events\JobProcessing;
 use DefectiveCode\Recall\Cache\RecallStore;
 use Illuminate\Redis\Connections\Connection;
@@ -323,5 +324,185 @@ class QueueModeTest extends TestCase
         (new RecallStore($redisStore, $cache, $manager))->flush();
 
         $this->assertSame(['redis', 'local'], $order);
+    }
+
+    public function testItReconnectsWithoutDataConnectionTrackingWhenOnlyTheSubscriberDies(): void
+    {
+        $this->app['config']->set('recall.cache_prefixes', ['users:']);
+        $client = new stdClass;
+
+        $subscriber = Mockery::mock(InvalidationSubscriber::class);
+        $subscriber->shouldReceive('isConnected')->andReturn(false, false, true);
+        $subscriber->shouldReceive('close');
+        $subscriber->shouldReceive('connect')->once();
+        $subscriber->shouldReceive('subscribe')->once();
+
+        $manager = new class($this->app, $client, $subscriber) extends RecallManager
+        {
+            public int $flushes = 0;
+
+            public int $dataTrackingCalls = 0;
+
+            public function __construct($app, protected object $client, protected InvalidationSubscriber $fake)
+            {
+                parent::__construct($app);
+                $this->trackingEnabled = true;
+                $this->trackedClient = $client;
+            }
+
+            public function getSubscriber(): InvalidationSubscriber
+            {
+                return $this->fake;
+            }
+
+            public function getLocalCache(): LocalCacheInterface
+            {
+                return Mockery::mock(LocalCacheInterface::class, function ($cache): void {
+                    $cache->shouldReceive('flush')->andReturnUsing(function (): bool {
+                        $this->flushes++;
+
+                        return true;
+                    });
+                });
+            }
+
+            public function getTracker(): ClientTracker
+            {
+                return Mockery::mock(ClientTracker::class, function ($tracker): void {
+                    $tracker->shouldReceive('clearPendingRequests');
+                    $tracker->shouldReceive('processInvalidations');
+                });
+            }
+
+            protected function enableClientTracking(int $redirectId): void
+            {
+                $this->dataTrackingCalls++;
+            }
+
+            protected function dataClient(): object
+            {
+                return $this->client;
+            }
+        };
+
+        $manager->processInvalidations();
+
+        $this->assertSame(1, $manager->flushes);
+        $this->assertSame(0, $manager->dataTrackingCalls);
+    }
+
+    public function testItSendsTrackingOffBeforeOnInDefaultMode(): void
+    {
+        $client = new class
+        {
+            /** @var array<int, array<string>> */
+            public array $commands = [];
+
+            /**
+             * @param  array<string>  $args
+             */
+            public function executeRaw(array $args): string
+            {
+                $this->commands[] = $args;
+
+                return 'OK';
+            }
+        };
+
+        $manager = new class($this->app, $client) extends RecallManager
+        {
+            public function __construct($app, protected object $fake)
+            {
+                parent::__construct($app);
+            }
+
+            public function enable(int $id): void
+            {
+                $this->enableClientTracking($id);
+            }
+
+            protected function dataConnection(): mixed
+            {
+                return new class($this->fake)
+                {
+                    public function __construct(protected object $client) {}
+
+                    public function client(): object
+                    {
+                        return $this->client;
+                    }
+                };
+            }
+        };
+
+        $manager->enable(9);
+
+        $this->assertSame(['CLIENT', 'TRACKING', 'OFF'], $client->commands[0]);
+        $this->assertSame(['CLIENT', 'TRACKING', 'ON', 'REDIRECT', '9'], $client->commands[1]);
+    }
+
+    public function testItFailsWhenTrackingCommandReturnsFalse(): void
+    {
+        $client = new class
+        {
+            public function executeRaw(array $args): bool
+            {
+                return false;
+            }
+        };
+
+        $manager = new class($this->app, $client) extends RecallManager
+        {
+            public function __construct($app, protected object $fake)
+            {
+                parent::__construct($app);
+            }
+
+            public function enable(int $id): void
+            {
+                $this->enableClientTracking($id);
+            }
+
+            protected function dataConnection(): mixed
+            {
+                return new class($this->fake)
+                {
+                    public function __construct(protected object $client) {}
+
+                    public function client(): object
+                    {
+                        return $this->client;
+                    }
+                };
+            }
+        };
+
+        $this->expectException(RuntimeException::class);
+
+        $manager->enable(9);
+    }
+
+    public function testItReportsAnOutageOnlyOnce(): void
+    {
+        $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activateForQueue');
+        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('processInvalidations')->andThrow(new RuntimeException('down'));
+        $manager->shouldReceive('deactivate');
+
+        $handler = Mockery::mock(ExceptionHandler::class);
+        $handler->shouldReceive('report')->once();
+        $this->app->instance(ExceptionHandler::class, $handler);
+
+        $listener = new ProcessQueueInvalidations($manager);
+        $listener->handle(new Looping('redis', 'default'));
+        $listener->handle(new Looping('redis', 'default'));
+    }
+
+    public function testItRegistersTheTaskReceivedListener(): void
+    {
+        $this->bootProviderWith(true, true);
+
+        $this->assertTrue($this->app['events']->hasListeners(TaskReceived::class));
     }
 }

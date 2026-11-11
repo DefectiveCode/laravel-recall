@@ -44,6 +44,21 @@ class RespWriter
         return $this->command('CLIENT', ['ID']);
     }
 
+    /**
+     * @param  array<string>  $prefixes
+     */
+    public function trackingBroadcast(int $redirectId, array $prefixes): string
+    {
+        $args = ['TRACKING', 'ON', 'REDIRECT', $redirectId, 'BCAST'];
+
+        foreach ($prefixes as $prefix) {
+            $args[] = 'PREFIX';
+            $args[] = $prefix;
+        }
+
+        return $this->command('CLIENT', $args);
+    }
+
     public function subscribe(string ...$channels): string
     {
         return $this->command('SUBSCRIBE', $channels);

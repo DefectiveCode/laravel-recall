@@ -62,7 +62,7 @@ return [
         // Swoole Table size (must be power of 2). Only used with swoole driver.
         'table_size' => (int) env('RECALL_SWOOLE_TABLE_SIZE', 65536),
 
-        // Max bytes for serialized values in Swoole Table. Only used with swoole driver.
+        // Max bytes for serialized values stored locally (Swoole Table column size and queue worker cache cap).
         'value_size' => (int) env('RECALL_SWOOLE_VALUE_SIZE', 8192),
 
         // Share one Swoole Table across every Octane worker on the server instead of one per worker.

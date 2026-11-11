@@ -8,6 +8,7 @@ use Illuminate\Cache\Repository;
 use Illuminate\Cache\CacheManager;
 use Illuminate\Queue\Events\Looping;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Octane\Events\TaskReceived;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Octane\Events\WorkerStopping;
@@ -29,6 +30,8 @@ class RecallServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/recall.php', 'recall');
+
+        $this->app->singleton(ProcessQueueInvalidations::class);
 
         $this->app->singleton(RecallManager::class, function (Application $app) {
             return new RecallManager($app);
@@ -56,6 +59,7 @@ class RecallServiceProvider extends ServiceProvider
 
         if (
             ! $config->get('recall.local_cache.shared', false)
+            || empty($config->get('recall.cache_prefixes'))
             || $config->get('recall.local_cache.driver') !== 'swoole'
         ) {
             return;
@@ -108,6 +112,7 @@ class RecallServiceProvider extends ServiceProvider
         }
 
         $events->listen(RequestReceived::class, ProcessInvalidations::class);
+        $events->listen(TaskReceived::class, ProcessInvalidations::class);
 
         if ($this->app['config']['recall.listeners.tick'] ?? false) {
             $events->listen(TickReceived::class, ProcessInvalidations::class);

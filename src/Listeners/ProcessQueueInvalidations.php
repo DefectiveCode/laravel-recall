@@ -11,6 +11,8 @@ use Illuminate\Queue\Events\JobProcessing;
 
 class ProcessQueueInvalidations
 {
+    protected bool $reported = false;
+
     public function __construct(
         protected RecallManager $manager,
     ) {}
@@ -27,8 +29,13 @@ class ProcessQueueInvalidations
 
         try {
             $this->manager->processInvalidations();
+            $this->reported = false;
         } catch (Throwable $e) {
-            report($e);
+            if (! $this->reported) {
+                report($e);
+            }
+
+            $this->reported = true;
 
             $this->manager->deactivate();
         }
