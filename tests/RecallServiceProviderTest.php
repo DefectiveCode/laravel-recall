@@ -98,4 +98,50 @@ class RecallServiceProviderTest extends TestCase
         $this->assertTrue($this->app['config']['recall.listeners.warm']);
         $this->assertFalse($this->app['config']['recall.listeners.tick']);
     }
+
+    public function testItRegistersOctaneTablesOnlyWhenSharedWithSwoole(): void
+    {
+        $this->registerWith(['driver' => 'swoole', 'shared' => false]);
+        $this->assertNull($this->app['config']->get('octane.tables'));
+
+        $this->registerWith(['driver' => 'apcu', 'shared' => true]);
+        $this->assertNull($this->app['config']->get('octane.tables'));
+
+        $this->registerWith(['driver' => 'swoole', 'shared' => true, 'table_size' => 128, 'epoch_stripes' => 16]);
+
+        $tables = $this->app['config']->get('octane.tables');
+        $this->assertSame(['value' => 'string:8192', 'expires_at' => 'int'], $tables['recall:128']);
+        $this->assertSame(['epoch' => 'int'], $tables['recall_epochs:32']);
+    }
+
+    public function testItDoesNotRegisterOctaneTablesWithoutCachePrefixes(): void
+    {
+        $this->registerWith(['driver' => 'swoole', 'shared' => true, 'cache_prefixes' => []]);
+
+        $this->assertNull($this->app['config']->get('octane.tables'));
+    }
+
+    public function testItKeepsExistingOctaneTablesWhenRegisteringSharedTables(): void
+    {
+        $existing = ['example:1000' => ['name' => 'string:1000']];
+        $this->app['config']->set('octane.tables', $existing);
+
+        $this->registerWith(['driver' => 'swoole', 'shared' => true, 'table_size' => 128]);
+        $this->registerWith(['driver' => 'swoole', 'shared' => true, 'table_size' => 128]);
+
+        $tables = $this->app['config']->get('octane.tables');
+        $this->assertSame($existing['example:1000'], $tables['example:1000']);
+        $this->assertCount(3, $tables);
+    }
+
+    /**
+     * @param  array<string, mixed>  $localCache
+     */
+    protected function registerWith(array $localCache): void
+    {
+        $this->app['config']->set('recall.local_cache', $localCache + $this->app['config']['recall.local_cache']);
+        $this->app['config']->set('recall.cache_prefixes', $localCache['cache_prefixes'] ?? ['users:']);
+
+        (new RecallServiceProvider($this->app))->register();
+    }
 }

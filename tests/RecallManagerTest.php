@@ -81,7 +81,7 @@ class RecallManagerTest extends TestCase
         $this->assertSame($subscriber1, $subscriber2);
     }
 
-    public function testGetLocalCacheReturnsApcuByDefault(): void
+    public function testItGetLocalCacheReturnsApcuByDefault(): void
     {
         $this->app['config']->set('recall.local_cache.driver', 'apcu');
 
@@ -91,7 +91,7 @@ class RecallManagerTest extends TestCase
         $this->assertInstanceOf(LocalCache::class, $localCache);
     }
 
-    public function testGetLocalCacheReturnsSwooleWhenConfigured(): void
+    public function testItGetLocalCacheReturnsSwooleWhenConfigured(): void
     {
         $this->requireSwoole();
 
@@ -103,7 +103,7 @@ class RecallManagerTest extends TestCase
         $this->assertInstanceOf(SwooleTableCache::class, $localCache);
     }
 
-    public function testGetLocalCacheLazyInitialization(): void
+    public function testItGetLocalCacheLazyInitialization(): void
     {
         $manager = $this->app->make(RecallManager::class);
 
@@ -182,44 +182,18 @@ class RecallManagerTest extends TestCase
         $this->assertFalse($manager->isConnected());
     }
 
-    public function testBuildTrackingArgsWithoutPrefixes(): void
-    {
-        $this->configureRedis();
-
-        $manager = $this->app->make(RecallManager::class);
-
-        $reflection = new ReflectionClass($manager);
-        $method = $reflection->getMethod('buildTrackingArgs');
-
-        $args = $method->invoke($manager, 123, [], null);
-
-        $this->assertEquals(['CLIENT', 'TRACKING', 'ON', 'REDIRECT', '123'], $args);
-    }
-
-    public function testBuildTrackingArgsWithPrefixes(): void
+    public function testItBuildTrackingPrefixesAppendsTheFullKeyPrefix(): void
     {
         $this->configureRedis();
         $this->app['config']->set('cache.stores.redis.prefix', 'laravel_cache_');
 
         $manager = $this->app->make(RecallManager::class);
 
-        $reflection = new ReflectionClass($manager);
-        $method = $reflection->getMethod('buildTrackingArgs');
+        $method = (new ReflectionClass($manager))->getMethod('buildTrackingPrefixes');
 
-        $mockConnection = Mockery::mock();
+        $prefixes = $method->invoke($manager, ['users:', 'settings:'], Mockery::mock());
 
-        $args = $method->invoke($manager, 123, ['users:', 'settings:'], $mockConnection);
-
-        $this->assertEquals('CLIENT', $args[0]);
-        $this->assertEquals('TRACKING', $args[1]);
-        $this->assertEquals('ON', $args[2]);
-        $this->assertEquals('REDIRECT', $args[3]);
-        $this->assertEquals('123', $args[4]);
-        $this->assertEquals('BCAST', $args[5]);
-        $this->assertEquals('PREFIX', $args[6]);
-        $this->assertStringEndsWith('users:', $args[7]);
-        $this->assertEquals('PREFIX', $args[8]);
-        $this->assertStringEndsWith('settings:', $args[9]);
+        $this->assertSame(['laravel_cache_users:', 'laravel_cache_settings:'], $prefixes);
     }
 
     public function testGetFullKeyPrefixWithStorePrefix(): void

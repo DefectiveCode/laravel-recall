@@ -26,6 +26,7 @@ class WarmConnectionsTest extends TestCase
     public function testHandleCallsEnableTracking(): void
     {
         $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activate')->once();
         $manager->shouldReceive('enableTracking')->once();
 
         $listener = new WarmConnections($manager);

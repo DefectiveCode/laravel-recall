@@ -112,6 +112,41 @@ Recall automatically integrates with Laravel Octane when available:
 
 No additional configuration is required. The integration is automatic when Octane is installed.
 
+## Where Local Caching Happens
+
+Recall only caches locally in processes that also process invalidations:
+
+- **Octane workers**: activated on worker start and on every request.
+- **Queue daemon workers** (`queue:work`, Horizon workers): activated on the first queue loop, using a per-process
+  in-memory cache.
+
+Everything else passes straight through to Redis with no local cache: artisan commands, `schedule:run`,
+Horizon's master and supervisor processes, and `queue:work --once`.
+
+## Queue Workers
+
+Queue daemon workers get their own in-memory local cache (regardless of `local_cache.driver`), bounded by
+`queue.max_entries` with least-recently-used eviction. Values are stored serialized, so jobs cannot mutate cached
+objects. Invalidations are processed on every worker loop and before every job, and a local hit inside a running job
+drains pending invalidations first, so a long job sees invalidations on a best-effort basis, bounded by invalidation
+delivery latency. A worker forked from an activated parent resets its local state and activates again on its next loop.
+
+If enabling tracking fails (for example during a Redis outage), the failure is reported and that loop passes through to
+Redis; Recall retries on a later loop. Queue activation runs in a `Looping` listener: a third-party `Looping` listener
+that returns a non-null value stops Laravel's `until()` dispatch before Recall runs, and Recall then stays pass-through.
+
+## Lost Connections
+
+With `cache_prefixes` set, tracking is enabled on the invalidation connection itself (`CLIENT TRACKING ON REDIRECT <own id> BCAST PREFIX ...`
+before `SUBSCRIBE`), so it never depends on the data connection and every reconnect starts from a clean connection. Without
+`cache_prefixes`, tracking is enabled on the data connection, and a silent data-connection reconnect (for example Redis
+`timeout` closing an idle connection) drops tracking without Recall detecting it, because phpredis and Predis reconnect inside the same client object.
+Set `cache_prefixes` (BCAST), where the data connection carries no tracking, to avoid this.
+
+If the invalidation connection drops, or Laravel replaces the Redis client that tracking was enabled on (for example
+after a "went away" error), Recall flushes the local cache, reconnects, and enables tracking again before serving more
+local hits, as the Redis client-side caching documentation recommends.
+
 # Configuration
 
 Publish the configuration file:
@@ -171,8 +206,14 @@ This is useful when you have high-volume keys that change frequently and shouldn
     // Swoole Table size (power of 2, only for swoole driver)
     'table_size' => (int) env('RECALL_SWOOLE_TABLE_SIZE', 65536),
 
-    // Max bytes per value in Swoole Table (only for swoole driver)
+    // Max bytes per serialized value stored locally (Swoole Table and queue worker cache)
     'value_size' => (int) env('RECALL_SWOOLE_VALUE_SIZE', 8192),
+
+    // Share one table across all Octane workers (swoole driver + Octane only)
+    'shared' => env('RECALL_SHARED_TABLE', false),
+
+    // Epoch counters used to fence local fills against invalidations (only when shared)
+    'epoch_stripes' => (int) env('RECALL_EPOCH_STRIPES', 1024),
 ],
 ```
 
@@ -194,7 +235,26 @@ same worker. Best for Swoole/OpenSwoole environments.
 **Configuration tips:**
 
 - `table_size`: Must be a power of 2 (e.g., 65536, 131072). Determines max number of entries.
-- `value_size`: Maximum bytes for serialized values. Larger values are not stored locally and are read from Redis every time.
+- `value_size`: Maximum bytes for serialized values (also caps the queue worker cache). Larger values are not stored locally and are read from Redis every time.
+
+### Shared Table Mode
+
+By default each Octane worker builds its own Swoole Table, so every worker warms and holds its own copy. Set
+`RECALL_SHARED_TABLE=true` (swoole driver under Octane only) to use a single table shared by every worker on the server.
+Recall registers two Octane tables, `recall` and `recall_epochs`, in `octane.tables` for you; existing entries are kept.
+
+- Requires `cache_prefixes`: shared mode relies on `CLIENT TRACKING ... BCAST`, which Recall only enables when
+  `cache_prefixes` is non-empty. Without prefixes every worker falls back to its own per-worker table, because default
+  tracking only notifies the worker that filled a key.
+- Memory: one table per server instead of one per worker. `table_size` and `value_size` size that single table.
+- Correctness: every worker still receives every invalidation, and `epoch_stripes` counters stop a read that raced an
+  invalidation from refilling the table with a stale value. A full table skips the fill instead of failing the read.
+- Live tables win: Recall uses the shared tables only if both exist in the running server, and takes the value size and
+  stripe count from them. Changing `shared`, `table_size`, `value_size` or `epoch_stripes` needs a full `octane:stop`
+  and `octane:start`, not `octane:reload`.
+- With a single Octane worker there is a short window with no subscriber while that worker recycles, and the shared table
+  survives the recycle, so invalidations sent in that window are missed until `default_ttl`. Run at least two workers.
+- Outside Octane, local caching only happens in queue daemon workers, which use their own in-memory cache.
 
 ## Octane Listeners
 
@@ -205,6 +265,14 @@ same worker. Best for Swoole/OpenSwoole environments.
 
     // Process invalidations on tick events (more responsive, slight overhead)
     'tick' => env('RECALL_LISTEN_TICK', false),
+
+    // Local cache and invalidation processing for queue daemon workers
+    'queue' => env('RECALL_LISTEN_QUEUE', true),
+],
+
+'queue' => [
+    // Max entries in each queue worker's local cache (least recently used evicted first)
+    'max_entries' => (int) env('RECALL_QUEUE_MAX_ENTRIES', 1000),
 ],
 ```
 

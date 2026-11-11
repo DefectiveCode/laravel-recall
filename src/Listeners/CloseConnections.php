@@ -6,6 +6,7 @@ namespace DefectiveCode\Recall\Listeners;
 
 use DefectiveCode\Recall\RecallManager;
 use Laravel\Octane\Events\WorkerStopping;
+use Illuminate\Queue\Events\WorkerStopping as QueueWorkerStopping;
 
 class CloseConnections
 {
@@ -13,7 +14,7 @@ class CloseConnections
         protected RecallManager $manager,
     ) {}
 
-    public function handle(WorkerStopping $event): void
+    public function handle(WorkerStopping|QueueWorkerStopping $event): void
     {
         $this->manager->disconnect();
     }

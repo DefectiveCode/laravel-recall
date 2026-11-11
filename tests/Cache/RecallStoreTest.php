@@ -16,6 +16,7 @@ use DefectiveCode\Recall\Cache\RecallStore;
 use Illuminate\Contracts\Cache\LockProvider;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use DefectiveCode\Recall\Tracking\PendingRequest;
+use DefectiveCode\Recall\Contracts\FencedLocalCache;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
@@ -28,7 +29,7 @@ class RecallStoreTest extends TestCase
     {
         $fakeStore = Mockery::mock(Store::class);
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessage('RecallStore requires a RedisStore instance');
@@ -50,7 +51,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $localCache->shouldReceive('get')->with('laravel_cache:mykey')->once()->andReturn('cached_value');
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => true]);
 
@@ -78,7 +79,7 @@ class RecallStoreTest extends TestCase
         $tracker->shouldReceive('registerPendingRequest')->with('laravel_cache:mykey')->once()->andReturn($pendingRequest);
         $tracker->shouldReceive('completePendingRequest')->with($pendingRequest)->once()->andReturn(true);
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
         $manager->shouldReceive('getTracker')->andReturn($tracker);
 
         $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => true]);
@@ -107,7 +108,7 @@ class RecallStoreTest extends TestCase
         $tracker->shouldReceive('registerPendingRequest')->with('laravel_cache:mykey')->once()->andReturn($pendingRequest);
         $tracker->shouldReceive('completePendingRequest')->with($pendingRequest)->once()->andReturn(false);
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
         $manager->shouldReceive('getTracker')->andReturn($tracker);
 
         $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => true]);
@@ -124,7 +125,7 @@ class RecallStoreTest extends TestCase
         $localCache->shouldNotReceive('get');
         $localCache->shouldNotReceive('put');
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
@@ -140,7 +141,7 @@ class RecallStoreTest extends TestCase
         $localCache->shouldNotReceive('get');
         $localCache->shouldNotReceive('put');
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager, [
             'enabled' => true,
@@ -171,7 +172,7 @@ class RecallStoreTest extends TestCase
         $tracker->shouldReceive('registerPendingRequest')->with('laravel_cache:users:1')->once()->andReturn($pendingRequest);
         $tracker->shouldReceive('completePendingRequest')->with($pendingRequest)->once()->andReturn(true);
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
         $manager->shouldReceive('getTracker')->andReturn($tracker);
 
         $store = new RecallStore($redisStore, $localCache, $manager, [
@@ -197,7 +198,7 @@ class RecallStoreTest extends TestCase
         $localCache->shouldReceive('get')->with('key1')->once()->andReturn('value1');
         $localCache->shouldReceive('get')->with('key2')->once()->andReturn('value2');
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => true]);
 
@@ -212,9 +213,9 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('put')->with('key', 'value', 60)->once()->andReturn(true);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->put('key', 'value', 60));
     }
@@ -225,9 +226,9 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('putMany')->with(['key1' => 'value1'], 60)->once()->andReturn(true);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->putMany(['key1' => 'value1'], 60));
     }
@@ -238,9 +239,9 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('increment')->with('counter', 1)->once()->andReturn(5);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertEquals(5, $store->increment('counter'));
     }
@@ -251,9 +252,9 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('decrement')->with('counter', 1)->once()->andReturn(3);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertEquals(3, $store->decrement('counter'));
     }
@@ -264,9 +265,9 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('forever')->with('key', 'value')->once()->andReturn(true);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->forever('key', 'value'));
     }
@@ -286,7 +287,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $localCache->shouldReceive('forget')->with('laravel_cache:key')->once()->andReturn(true);
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager);
 
@@ -305,7 +306,7 @@ class RecallStoreTest extends TestCase
         $localCache = Mockery::mock(LocalCacheInterface::class);
         $localCache->shouldNotReceive('forget');
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
@@ -318,9 +319,9 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('forget')->with('key')->once()->andReturn(true);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
-        $store = new RecallStore($redisStore, $localCache, $manager);
+        $store = new RecallStore($redisStore, $localCache, $manager, ['enabled' => false]);
 
         $this->assertTrue($store->forget('key'));
     }
@@ -336,7 +337,7 @@ class RecallStoreTest extends TestCase
         $tracker = Mockery::mock(ClientTracker::class);
         $tracker->shouldReceive('clearPendingRequests')->once();
 
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
         $manager->shouldReceive('getTracker')->andReturn($tracker);
 
         $store = new RecallStore($redisStore, $localCache, $manager);
@@ -350,7 +351,7 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('getPrefix')->once()->andReturn('laravel_cache:');
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager);
 
@@ -361,7 +362,7 @@ class RecallStoreTest extends TestCase
     {
         $redisStore = Mockery::mock(RedisStore::class);
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager);
 
@@ -376,7 +377,7 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('lock')->with('my-lock', 10, 'owner-token')->once()->andReturn($lock);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager);
 
@@ -391,7 +392,7 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('lock')->with('my-lock', 0, null)->once()->andReturn($lock);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager);
 
@@ -406,10 +407,111 @@ class RecallStoreTest extends TestCase
         $redisStore->shouldReceive('restoreLock')->with('my-lock', 'owner-token')->once()->andReturn($lock);
 
         $localCache = Mockery::mock(LocalCacheInterface::class);
-        $manager = Mockery::mock(RecallManager::class);
+        $manager = $this->activeManager();
 
         $store = new RecallStore($redisStore, $localCache, $manager);
 
         $this->assertSame($lock, $store->restoreLock('my-lock', 'owner-token'));
+    }
+
+    public function testItWritePathsForgetTheLocalCopy(): void
+    {
+        $redisStore = $this->redisStoreWithPrefix();
+        $redisStore->shouldReceive('put')->once()->andReturn(true);
+        $redisStore->shouldReceive('putMany')->once()->andReturn(true);
+        $redisStore->shouldReceive('increment')->once()->andReturn(2);
+        $redisStore->shouldReceive('decrement')->once()->andReturn(1);
+        $redisStore->shouldReceive('forever')->once()->andReturn(true);
+        $redisStore->shouldReceive('forget')->once()->andReturn(true);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldReceive('forget')->with('p:a')->times(5)->andReturn(true);
+        $localCache->shouldReceive('forget')->with('p:b')->times(2)->andReturn(true);
+
+        $store = new RecallStore($redisStore, $localCache, $this->activeManager());
+
+        $store->put('a', 1, 60);
+        $store->putMany(['a' => 1, 'b' => 2], 60);
+        $store->increment('a');
+        $store->decrement('a');
+        $store->forever('a', 1);
+        $store->forget('b');
+    }
+
+    public function testItWriteForgetsTheLocalCopyWhenRedisThrows(): void
+    {
+        $redisStore = $this->redisStoreWithPrefix();
+        $redisStore->shouldReceive('put')->once()->andThrow(new RuntimeException('down'));
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldReceive('forget')->with('p:a')->once()->andReturn(true);
+
+        $store = new RecallStore($redisStore, $localCache, $this->activeManager());
+
+        $this->expectException(RuntimeException::class);
+
+        $store->put('a', 1, 60);
+    }
+
+    public function testItWriteDoesNotForgetKeysOutsideCachePrefixes(): void
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('put')->once()->andReturn(true);
+
+        $localCache = Mockery::mock(LocalCacheInterface::class);
+        $localCache->shouldNotReceive('forget');
+
+        $store = new RecallStore($redisStore, $localCache, $this->activeManager(), [
+            'cache_prefixes' => ['users:'],
+        ]);
+
+        $store->put('other:1', 1, 60);
+    }
+
+    public function testItGetFillsAFencedLocalCacheWithTheFenceTakenBeforeRedis(): void
+    {
+        $redisStore = $this->redisStoreWithPrefix();
+        $redisStore->shouldReceive('get')->with('a')->once()->andReturn('v');
+
+        $localCache = Mockery::mock(FencedLocalCache::class);
+        $localCache->shouldReceive('get')->with('p:a')->once()->andReturn(null);
+        $localCache->shouldReceive('fence')->with('p:a')->once()->andReturn(7);
+        $localCache->shouldReceive('putFenced')->with('p:a', 'v', 7)->once()->andReturn(true);
+        $localCache->shouldNotReceive('put');
+
+        $pendingRequest = new PendingRequest('p:a');
+        $tracker = Mockery::mock(ClientTracker::class);
+        $tracker->shouldReceive('registerPendingRequest')->andReturn($pendingRequest);
+        $tracker->shouldReceive('completePendingRequest')->andReturn(true);
+
+        $manager = $this->activeManager();
+        $manager->shouldReceive('getTracker')->andReturn($tracker);
+
+        $store = new RecallStore($redisStore, $localCache, $manager);
+
+        $this->assertSame('v', $store->get('a'));
+    }
+
+    protected function redisStoreWithPrefix(): RedisStore
+    {
+        $redisStore = Mockery::mock(RedisStore::class);
+        $redisStore->shouldReceive('getPrefix')->andReturn('p:');
+
+        $connection = Mockery::mock(PhpRedisConnection::class);
+        $redis = Mockery::mock(Redis::class);
+        $redis->shouldReceive('getOption')->with(Redis::OPT_PREFIX)->andReturn('');
+        $connection->shouldReceive('client')->andReturn($redis);
+        $redisStore->shouldReceive('connection')->andReturn($connection);
+
+        return $redisStore;
+    }
+
+    protected function activeManager(): RecallManager
+    {
+        $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('isActive')->andReturn(true);
+        $manager->shouldReceive('isQueueMode')->andReturn(false);
+
+        return $manager;
     }
 }

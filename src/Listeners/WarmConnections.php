@@ -15,6 +15,7 @@ class WarmConnections
 
     public function handle(WorkerStarting $event): void
     {
+        $this->manager->activate();
         $this->manager->enableTracking();
     }
 }

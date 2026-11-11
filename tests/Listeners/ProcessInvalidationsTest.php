@@ -7,6 +7,7 @@ namespace DefectiveCode\Recall\Tests\Listeners;
 use Mockery;
 use PHPUnit\Framework\TestCase;
 use DefectiveCode\Recall\RecallManager;
+use Laravel\Octane\Events\TaskReceived;
 use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\RequestReceived;
 use DefectiveCode\Recall\Tests\RequiresExtensions;
@@ -27,6 +28,7 @@ class ProcessInvalidationsTest extends TestCase
     public function testHandleCallsProcessInvalidationsOnRequestReceived(): void
     {
         $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activate')->once();
         $manager->shouldReceive('processInvalidations')->once();
 
         $listener = new ProcessInvalidations($manager);
@@ -39,6 +41,7 @@ class ProcessInvalidationsTest extends TestCase
     public function testHandleCallsProcessInvalidationsOnTickReceived(): void
     {
         $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activate')->once();
         $manager->shouldReceive('processInvalidations')->once();
 
         $listener = new ProcessInvalidations($manager);
@@ -46,5 +49,14 @@ class ProcessInvalidationsTest extends TestCase
         $event = Mockery::mock(TickReceived::class);
 
         $listener->handle($event);
+    }
+
+    public function testItHandleCallsProcessInvalidationsOnTaskReceived(): void
+    {
+        $manager = Mockery::mock(RecallManager::class);
+        $manager->shouldReceive('activate')->once();
+        $manager->shouldReceive('processInvalidations')->once();
+
+        (new ProcessInvalidations($manager))->handle(Mockery::mock(TaskReceived::class));
     }
 }

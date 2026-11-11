@@ -62,8 +62,16 @@ return [
         // Swoole Table size (must be power of 2). Only used with swoole driver.
         'table_size' => (int) env('RECALL_SWOOLE_TABLE_SIZE', 65536),
 
-        // Max bytes for serialized values in Swoole Table. Only used with swoole driver.
+        // Max bytes for serialized values stored locally (Swoole Table column size and queue worker cache cap).
         'value_size' => (int) env('RECALL_SWOOLE_VALUE_SIZE', 8192),
+
+        // Share one Swoole Table across every Octane worker on the server instead of one per worker.
+        // Swoole driver under Octane only. Registers the "recall" and "recall_epochs" Octane tables.
+        'shared' => env('RECALL_SHARED_TABLE', false),
+
+        // Number of epoch counters used to fence local fills against concurrent invalidations.
+        // Only used when "shared" is enabled.
+        'epoch_stripes' => (int) env('RECALL_EPOCH_STRIPES', 1024),
 
     ],
 
@@ -83,6 +91,25 @@ return [
 
         // Process invalidations on tick events (more responsive, slight overhead).
         'tick' => env('RECALL_LISTEN_TICK', false),
+
+        // Give queue daemon workers (queue:work, Horizon) their own local cache and drain invalidations.
+        'queue' => env('RECALL_LISTEN_QUEUE', true),
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Queue Workers
+    |--------------------------------------------------------------------------
+    |
+    | Queue daemon workers use a per-process in-memory local cache.
+    |
+    */
+
+    'queue' => [
+
+        // Max entries held by each queue worker's local cache. Oldest-used entries are evicted first.
+        'max_entries' => (int) env('RECALL_QUEUE_MAX_ENTRIES', 1000),
 
     ],
 

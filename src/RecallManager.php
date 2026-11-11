@@ -5,14 +5,22 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall;
 
 use Redis;
+use Throwable;
+use Swoole\Table;
 use RuntimeException;
+use ReflectionProperty;
+use Swoole\Http\Server;
+use Predis\Response\ErrorInterface;
+use Laravel\Octane\Swoole\WorkerState;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
+use DefectiveCode\Recall\Cache\ArrayLocalCache;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Redis\Connections\PredisConnection;
 use Illuminate\Redis\Connections\PhpRedisConnection;
+use DefectiveCode\Recall\Cache\SharedSwooleTableCache;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
@@ -27,6 +35,14 @@ class RecallManager
     protected ?RecallStore $store = null;
 
     protected bool $trackingEnabled = false;
+
+    protected ?object $trackedClient = null;
+
+    protected bool $active = false;
+
+    protected bool $queueMode = false;
+
+    protected int $activePid = 0;
 
     public function __construct(
         protected Application $app,
@@ -43,7 +59,7 @@ class RecallManager
 
         $this->store = new RecallStore(
             redisStore: $redisStore,
-            localCache: $this->getLocalCache(),
+            localCache: fn (): LocalCacheInterface => $this->getLocalCache(),
             manager: $this,
             config: [
                 'enabled' => $this->app['config']['recall.enabled'] ?? true,
@@ -54,9 +70,70 @@ class RecallManager
         return $this->store;
     }
 
+    public function activate(): void
+    {
+        if ($this->isActive()) {
+            return;
+        }
+
+        $this->active = true;
+        $this->activePid = (int) getmypid();
+    }
+
+    public function activateForQueue(): void
+    {
+        if ($this->isActive()) {
+            return;
+        }
+
+        $this->activate();
+        $this->queueMode = true;
+        $this->tracker = null;
+        $this->localCache = new ArrayLocalCache([
+            'default_ttl' => (int) ($this->app['config']['recall.local_cache.default_ttl'] ?? 3600),
+            'max_entries' => (int) ($this->app['config']['recall.queue.max_entries'] ?? 1000),
+            'value_size' => (int) ($this->app['config']['recall.local_cache.value_size'] ?? 8192),
+        ]);
+    }
+
+    public function isActive(): bool
+    {
+        if ($this->active && getmypid() !== $this->activePid) {
+            $this->reset();
+        }
+
+        return $this->active;
+    }
+
+    public function deactivate(): void
+    {
+        $this->disconnect();
+        $this->reset();
+    }
+
+    protected function reset(): void
+    {
+        $this->subscriber = null;
+        $this->tracker = null;
+        $this->localCache = null;
+        $this->trackedClient = null;
+        $this->trackingEnabled = false;
+        $this->active = false;
+        $this->queueMode = false;
+    }
+
+    public function isQueueMode(): bool
+    {
+        return $this->isActive() && $this->queueMode;
+    }
+
     public function getSubscriber(): InvalidationSubscriber
     {
-        return $this->subscriber ??= new InvalidationSubscriber($this->getRedisConnectionConfig());
+        return $this->subscriber ??= new InvalidationSubscriber($this->getRedisConnectionConfig() + [
+            'tracking_prefixes' => $this->broadcastsTracking()
+                ? $this->buildTrackingPrefixes($this->app['config']['recall.cache_prefixes'], $this->dataConnection())
+                : [],
+        ]);
     }
 
     public function getLocalCache(): LocalCacheInterface
@@ -69,9 +146,53 @@ class RecallManager
         $config = $this->app['config']['recall.local_cache'] ?? [];
 
         return $this->localCache = match ($driver) {
-            'swoole' => new SwooleTableCache($config),
+            'swoole' => $this->makeSwooleCache($config),
             default => new LocalCache($config),
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     */
+    protected function makeSwooleCache(array $config): LocalCacheInterface
+    {
+        $tables = $this->sharedTables($config);
+
+        if ($tables !== null) {
+            return new SharedSwooleTableCache($tables[0], $tables[1], $tables[2]);
+        }
+
+        return new SwooleTableCache($config);
+    }
+
+    /**
+     * @param  array<string, mixed>  $config
+     * @return array{0: Table, 1: Table, 2: array<string, mixed>}|null
+     */
+    protected function sharedTables(array $config): ?array
+    {
+        if (
+            ! ($config['shared'] ?? false)
+            || empty($this->app['config']['recall.cache_prefixes'])
+            || ! $this->app->bound(Server::class)
+            || ! class_exists(WorkerState::class)
+        ) {
+            return null;
+        }
+
+        $tables = $this->app->make(WorkerState::class)->tables ?? [];
+        $data = $tables[RecallServiceProvider::DATA_TABLE] ?? null;
+        $epochs = $tables[RecallServiceProvider::EPOCH_TABLE] ?? null;
+
+        if (! $data instanceof Table || ! $epochs instanceof Table) {
+            return null;
+        }
+
+        $columns = property_exists($data, 'columns') ? (new ReflectionProperty($data, 'columns'))->getValue($data) : [];
+        $config['value_size'] = (int) ($columns['value'][1] ?? $config['value_size'] ?? 8192);
+        $config['epoch_stripes'] = intdiv(method_exists($epochs, 'getSize') ? $epochs->getSize() : 2 * (int) ($config['epoch_stripes'] ?? 1024), 2);
+
+        return $config['epoch_stripes'] < 1 ? null : [$data, $epochs, $config];
     }
 
     public function getTracker(): ClientTracker
@@ -90,22 +211,52 @@ class RecallManager
 
         $subscriber = $this->getSubscriber();
 
-        if (! $subscriber->isConnected()) {
-            $subscriber->connect();
-            $subscriber->subscribe();
+        try {
+            if (! $subscriber->isConnected()) {
+                $subscriber->connect();
+                $subscriber->subscribe();
+            }
+
+            if (! $this->broadcastsTracking()) {
+                $this->enableClientTracking($subscriber->getConnectionId());
+                $this->trackedClient = $this->dataClient();
+            }
+        } catch (Throwable $e) {
+            $subscriber->close();
+
+            throw $e;
         }
 
-        $this->enableClientTracking($subscriber->getConnectionId());
         $this->trackingEnabled = true;
     }
 
     public function processInvalidations(): void
     {
+        if ($this->trackingEnabled && $this->trackingLost()) {
+            $this->getLocalCache()->flush();
+            $this->getTracker()->clearPendingRequests();
+            $this->disconnect();
+        }
+
         if (! $this->trackingEnabled) {
             $this->enableTracking();
         }
 
         $this->getTracker()->processInvalidations();
+    }
+
+    protected function trackingLost(): bool
+    {
+        if (! $this->getSubscriber()->isConnected()) {
+            return true;
+        }
+
+        return ! $this->broadcastsTracking() && $this->trackedClient !== $this->dataClient();
+    }
+
+    protected function dataClient(): object
+    {
+        return $this->dataConnection()->client();
     }
 
     public function flushLocalCache(): void
@@ -119,6 +270,7 @@ class RecallManager
             $this->subscriber->close();
         }
 
+        $this->trackedClient = null;
         $this->trackingEnabled = false;
     }
 
@@ -149,29 +301,30 @@ class RecallManager
 
     protected function enableClientTracking(int $redirectId): void
     {
-        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
-        $connectionName = $this->app['config']["cache.stores.{$redisStoreName}.connection"] ?? 'default';
-
-        $connection = $this->app['redis']->connection($connectionName);
+        $connection = $this->dataConnection();
         $client = $connection->client();
 
-        $cachePrefixes = $this->app['config']['recall.cache_prefixes'] ?? [];
-        $args = $this->buildTrackingArgs($redirectId, $cachePrefixes, $connection);
+        $this->rawCommand($client, ['CLIENT', 'TRACKING', 'OFF']);
+        $this->rawCommand($client, ['CLIENT', 'TRACKING', 'ON', 'REDIRECT', (string) $redirectId]);
+    }
 
+    /**
+     * @param  array<string>  $args
+     */
+    protected function rawCommand(object $client, array $args): void
+    {
         $result = $client instanceof Redis
             ? $client->rawCommand(...$args)
             : $client->executeRaw($args);
 
-        if ($result === false) {
-            $lastError = $client instanceof Redis ? $client->getLastError() : 'unknown error';
+        if ($result === false || $result instanceof ErrorInterface) {
+            $error = $client instanceof Redis ? $client->getLastError() : ($result instanceof ErrorInterface ? $result->getMessage() : null);
 
             if ($client instanceof Redis) {
                 $client->clearLastError();
             }
 
-            throw new RuntimeException(
-                "Failed to enable CLIENT TRACKING on connection '{$connectionName}' with REDIRECT {$redirectId}: {$lastError}"
-            );
+            throw new RuntimeException('Failed to run '.implode(' ', array_slice($args, 0, 3)).': '.($error ?? 'unknown error'));
         }
     }
 
@@ -179,24 +332,24 @@ class RecallManager
      * @param  array<string>  $cachePrefixes
      * @return array<string>
      */
-    protected function buildTrackingArgs(int $redirectId, array $cachePrefixes, mixed $connection): array
+    protected function buildTrackingPrefixes(array $cachePrefixes, mixed $connection): array
     {
-        $args = ['CLIENT', 'TRACKING', 'ON', 'REDIRECT', (string) $redirectId];
-
-        if (empty($cachePrefixes)) {
-            return $args;
-        }
-
-        $args[] = 'BCAST';
-
         $fullPrefix = $this->getFullKeyPrefix($connection);
 
-        foreach ($cachePrefixes as $prefix) {
-            $args[] = 'PREFIX';
-            $args[] = $fullPrefix.$prefix;
-        }
+        return array_map(fn (string $prefix): string => $fullPrefix.$prefix, $cachePrefixes);
+    }
 
-        return $args;
+    protected function dataConnection(): mixed
+    {
+        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
+        $connectionName = $this->app['config']["cache.stores.{$redisStoreName}.connection"] ?? 'default';
+
+        return $this->app['redis']->connection($connectionName);
+    }
+
+    protected function broadcastsTracking(): bool
+    {
+        return ! empty($this->app['config']['recall.cache_prefixes']);
     }
 
     protected function getFullKeyPrefix(mixed $connection): string

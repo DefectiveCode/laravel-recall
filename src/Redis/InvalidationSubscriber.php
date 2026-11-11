@@ -6,6 +6,7 @@ namespace DefectiveCode\Recall\Redis;
 
 use DefectiveCode\Recall\Protocol\RespParser;
 use DefectiveCode\Recall\Protocol\RespWriter;
+use DefectiveCode\Recall\Protocol\Types\Push;
 use DefectiveCode\Recall\Protocol\Types\Error;
 use DefectiveCode\Recall\Protocol\Types\Integer;
 use DefectiveCode\Recall\Protocol\Types\RespNull;
@@ -28,7 +29,7 @@ class InvalidationSubscriber
     protected bool $subscribed = false;
 
     /**
-     * @param  array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float, scheme?: string}  $config
+     * @param  array{host: string, port: int, password?: string|null, username?: string|null, database?: int, timeout?: float, scheme?: string, tracking_prefixes?: array<string>}  $config
      */
     public function __construct(
         protected array $config,
@@ -64,10 +65,24 @@ class InvalidationSubscriber
             return;
         }
 
+        $prefixes = $this->config['tracking_prefixes'] ?? [];
+
+        if ($prefixes !== []) {
+            $this->enableBroadcastTracking($prefixes);
+        }
+
         $command = $this->writer->subscribe(self::INVALIDATION_CHANNEL);
         $this->socket->write($command);
 
-        $this->parser->parse();
+        $reply = $this->parser->parse();
+
+        if (! $this->isSubscribeConfirmation($reply)) {
+            $detail = $reply instanceof Error ? $reply->getValue() : 'unexpected reply';
+            $this->close();
+
+            throw new ConnectionException("Failed to subscribe to the invalidation channel: {$detail}");
+        }
+
         $this->socket->setNonBlocking();
         $this->subscribed = true;
     }
@@ -110,6 +125,33 @@ class InvalidationSubscriber
     public function isConnected(): bool
     {
         return $this->socket !== null && $this->socket->isConnected();
+    }
+
+    protected function isSubscribeConfirmation(mixed $reply): bool
+    {
+        if (! $reply instanceof RespArray && ! $reply instanceof Push) {
+            return false;
+        }
+
+        $first = $reply->getElements()[0] ?? null;
+
+        return $first instanceof BulkString && strtolower($first->getValue()) === 'subscribe';
+    }
+
+    /**
+     * @param  array<string>  $prefixes
+     */
+    protected function enableBroadcastTracking(array $prefixes): void
+    {
+        $this->socket->write($this->writer->trackingBroadcast($this->connectionId, $prefixes));
+
+        $response = $this->parser->parse();
+
+        if ($response instanceof Error) {
+            $this->close();
+
+            throw new ConnectionException("Failed to enable CLIENT TRACKING on the subscriber: {$response->getValue()}");
+        }
     }
 
     protected function fetchConnectionId(): void
