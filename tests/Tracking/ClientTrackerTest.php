@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall\Tests\Tracking;
 
 use Mockery;
+use Mockery\MockInterface;
 use PHPUnit\Framework\TestCase;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use DefectiveCode\Recall\Tracking\PendingRequest;
@@ -16,9 +17,9 @@ class ClientTrackerTest extends TestCase
 {
     use MockeryPHPUnitIntegration;
 
-    private InvalidationSubscriber $subscriber;
+    private InvalidationSubscriber&MockInterface $subscriber;
 
-    private LocalCacheInterface $localCache;
+    private LocalCacheInterface&MockInterface $localCache;
 
     protected function setUp(): void
     {

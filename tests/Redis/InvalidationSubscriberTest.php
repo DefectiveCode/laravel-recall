@@ -12,6 +12,7 @@ use DefectiveCode\Recall\Protocol\Types\BulkString;
 use DefectiveCode\Recall\Protocol\Types\SimpleString;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
+use DefectiveCode\Recall\Exceptions\ConnectionException;
 
 class InvalidationSubscriberTest extends TestCase
 {
@@ -46,6 +47,14 @@ class InvalidationSubscriberTest extends TestCase
     public function testReadInvalidationsReturnsEmptyWhenNotSubscribed(): void
     {
         $this->assertEquals([], $this->subscriber->readInvalidations());
+    }
+
+    public function testSubscribeThrowsBeforeConnect(): void
+    {
+        $this->expectException(ConnectionException::class);
+        $this->expectExceptionMessage('Not connected to Redis server');
+
+        $this->subscriber->subscribe();
     }
 
     public function testCloseWhenNotConnected(): void
@@ -144,6 +153,9 @@ class InvalidationSubscriberTest extends TestCase
         $this->assertFalse($subscriber->isConnected());
     }
 
+    /**
+     * @param  array<mixed>  $parameters
+     */
     protected function invokeMethod(object $object, string $methodName, array $parameters = []): mixed
     {
         $reflection = new ReflectionClass($object);

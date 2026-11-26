@@ -1,7 +1,18 @@
 {
+  "private": true,
+  "name": "laravel-recall",
+  "scripts": {
+    "format": "bun run --bun prettier-package-json --write package.json && bun run --bun prettier --write .",
+    "format:check": "bun run --bun prettier --check .",
+    "package:check": "bun run --bun prettier-package-json --list-different package.json",
+    "typecheck": "bun run --bun tsc"
+  },
   "devDependencies": {
     "@prettier/plugin-xml": "^3.4.2",
-    "prettier": "^3.9.10",
-    "prettier-package-json": "^2.8.0"
-  }
+    "@types/bun": "^1.4.5",
+    "prettier": "^3.10.1",
+    "prettier-package-json": "^2.8.0",
+    "typescript": "^7.0.2"
+  },
+  "packageManager": "bun@1.4.5"
 }

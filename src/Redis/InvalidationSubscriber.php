@@ -38,19 +38,19 @@ class InvalidationSubscriber
 
     public function connect(): void
     {
-        $this->socket = new StreamSocket(
+        $this->socket = $socket = new StreamSocket(
             $this->config['host'],
             $this->config['port'],
             $this->config['timeout'] ?? 5.0,
             $this->config['scheme'] ?? 'tcp',
         );
 
-        $this->socket->connect();
-        $this->parser = new RespParser($this->socket);
+        $socket->connect();
+        $this->parser = $parser = new RespParser($socket);
 
-        $this->authenticate();
-        $this->selectDatabase();
-        $this->fetchConnectionId();
+        $this->authenticate($socket, $parser);
+        $this->selectDatabase($socket, $parser);
+        $this->fetchConnectionId($socket, $parser);
     }
 
     public function getConnectionId(): int
@@ -62,6 +62,10 @@ class InvalidationSubscriber
     {
         if ($this->subscribed) {
             return;
+        }
+
+        if ($this->socket === null || $this->parser === null) {
+            throw new ConnectionException('Not connected to Redis server');
         }
 
         $command = $this->writer->subscribe(self::INVALIDATION_CHANNEL);
@@ -79,7 +83,7 @@ class InvalidationSubscriber
      */
     public function readInvalidations(): array
     {
-        if (! $this->subscribed || $this->socket === null) {
+        if (! $this->subscribed || $this->socket === null || $this->parser === null) {
             return [];
         }
 
@@ -112,12 +116,12 @@ class InvalidationSubscriber
         return $this->socket !== null && $this->socket->isConnected();
     }
 
-    protected function fetchConnectionId(): void
+    protected function fetchConnectionId(StreamSocket $socket, RespParser $parser): void
     {
         $command = $this->writer->clientId();
-        $this->socket->write($command);
+        $socket->write($command);
 
-        $response = $this->parser->parse();
+        $response = $parser->parse();
 
         if ($response instanceof Integer) {
             $this->connectionId = $response->getValue();
@@ -168,7 +172,7 @@ class InvalidationSubscriber
         return [];
     }
 
-    protected function authenticate(): void
+    protected function authenticate(StreamSocket $socket, RespParser $parser): void
     {
         $password = $this->config['password'] ?? null;
 
@@ -179,15 +183,15 @@ class InvalidationSubscriber
         $username = $this->config['username'] ?? null;
         $command = $this->writer->auth($password, $username);
 
-        $this->socket->write($command);
-        $response = $this->parser->parse();
+        $socket->write($command);
+        $response = $parser->parse();
 
         if ($response instanceof Error) {
             throw new ConnectionException("Authentication failed: {$response->getValue()}");
         }
     }
 
-    protected function selectDatabase(): void
+    protected function selectDatabase(StreamSocket $socket, RespParser $parser): void
     {
         $database = $this->config['database'] ?? 0;
 
@@ -196,8 +200,8 @@ class InvalidationSubscriber
         }
 
         $command = $this->writer->select($database);
-        $this->socket->write($command);
-        $response = $this->parser->parse();
+        $socket->write($command);
+        $response = $parser->parse();
 
         if ($response instanceof Error) {
             throw new ConnectionException("Failed to select database: {$response->getValue()}");

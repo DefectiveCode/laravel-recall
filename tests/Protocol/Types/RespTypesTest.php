@@ -71,11 +71,10 @@ class RespTypesTest extends TestCase
         $this->assertEquals('', $bulk->getValue());
     }
 
-    public function testRespNullReturnsNull(): void
+    public function testRespNullReportsItsType(): void
     {
         $null = new RespNull;
 
-        $this->assertNull($null->getValue());
         $this->assertEquals('null', $null->getType());
     }
 
@@ -106,7 +105,7 @@ class RespTypesTest extends TestCase
 
         $this->assertInstanceOf(SimpleString::class, $array->get(0));
         $this->assertEquals('first', $array->get(0)->getValue());
-        $this->assertEquals('second', $array->get(1)->getValue());
+        $this->assertEquals('second', $array->get(1)?->getValue());
         $this->assertNull($array->get(99));
     }
 

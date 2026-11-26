@@ -20,6 +20,6 @@ abstract class TestCase extends BaseTestCase
 
     protected function defineEnvironment($app): void
     {
-        $app['config']->set('recall.enabled', true);
+        config()->set('recall.enabled', true);
     }
 }

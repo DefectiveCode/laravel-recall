@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall\Tests\Protocol;
 
 use Mockery;
+use Mockery\MockInterface;
 use PHPUnit\Framework\TestCase;
 use DefectiveCode\Recall\Redis\StreamSocket;
 use DefectiveCode\Recall\Protocol\RespParser;
@@ -22,7 +23,7 @@ class RespParserTest extends TestCase
 {
     use MockeryPHPUnitIntegration;
 
-    private StreamSocket $socket;
+    private StreamSocket&MockInterface $socket;
 
     private RespParser $parser;
 
@@ -91,8 +92,8 @@ class RespParserTest extends TestCase
 
         $result = $this->parser->parse();
 
-        $this->assertInstanceOf(RespNull::class, $result);
         $this->assertNull($result->getValue());
+        $this->assertInstanceOf(RespNull::class, $result);
     }
 
     public function testParsesEmptyBulkString(): void
@@ -120,8 +121,8 @@ class RespParserTest extends TestCase
 
         $this->assertInstanceOf(RespArray::class, $result);
         $this->assertEquals(2, $result->count());
-        $this->assertEquals('foo', $result->get(0)->getValue());
-        $this->assertEquals('bar', $result->get(1)->getValue());
+        $this->assertEquals('foo', $result->get(0)?->getValue());
+        $this->assertEquals('bar', $result->get(1)?->getValue());
     }
 
     public function testParsesEmptyArray(): void
@@ -244,8 +245,8 @@ class RespParserTest extends TestCase
 
         $this->assertInstanceOf(RespArray::class, $result);
         $this->assertEquals(4, $result->count());
-        $this->assertEquals('key1', $result->get(0)->getValue());
-        $this->assertEquals(1, $result->get(1)->getValue());
+        $this->assertEquals('key1', $result->get(0)?->getValue());
+        $this->assertEquals(1, $result->get(1)?->getValue());
     }
 
     public function testParsesSet(): void

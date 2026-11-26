@@ -54,10 +54,11 @@ composer require defectivecode/laravel-recall
 
 ## Requirements
 
-- PHP >= 8.4
-- Laravel 11.x or 12.x
+- PHP >= 8.5
+- Laravel 12.71+ or 13.40+
 - Laravel Octane
 - Redis 6.0+ (for client-side caching support)
+- ext-redis (PhpRedis, Laravel's default client) OR predis/predis with the `predis` client
 - ext-apcu OR ext-swoole (at least one required for local cache)
 
 # Usage

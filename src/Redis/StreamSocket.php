@@ -28,7 +28,7 @@ class StreamSocket
         $isTls = in_array($this->scheme, ['tls', 'ssl'], true);
         $protocol = $isTls ? 'tls' : 'tcp';
 
-        $this->socket = @stream_socket_client(
+        $socket = @stream_socket_client(
             "{$protocol}://{$this->host}:{$this->port}",
             $errno,
             $errstr,
@@ -36,12 +36,14 @@ class StreamSocket
             STREAM_CLIENT_CONNECT,
         );
 
-        if ($this->socket === false) {
+        if ($socket === false) {
             throw new ConnectionException(
                 "Failed to connect to Redis at {$this->host}:{$this->port}: {$errstr}",
-                $errno,
+                (int) $errno,
             );
         }
+
+        $this->socket = $socket;
 
         stream_set_timeout(
             $this->socket,
@@ -73,6 +75,9 @@ class StreamSocket
         return $written;
     }
 
+    /**
+     * @param  int<1, max>  $length
+     */
     public function read(int $length): string
     {
         $this->ensureConnected();
@@ -138,6 +143,9 @@ class StreamSocket
         return ! @feof($this->socket);
     }
 
+    /**
+     * @phpstan-assert !null $this->socket
+     */
     protected function ensureConnected(): void
     {
         if (! $this->isConnected()) {

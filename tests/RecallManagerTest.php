@@ -6,11 +6,16 @@ namespace DefectiveCode\Recall\Tests;
 
 use Mockery;
 use ReflectionClass;
+use RuntimeException;
+use Illuminate\Redis\RedisManager;
+use Predis\Command\CommandInterface;
 use DefectiveCode\Recall\RecallManager;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
+use Illuminate\Redis\Connections\Connection;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
+use Predis\Command\Processor\ProcessorInterface;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 
@@ -26,11 +31,11 @@ class RecallManagerTest extends TestCase
 
     protected function configureRedis(): void
     {
-        $this->app['config']->set('cache.stores.redis', [
+        config()->set('cache.stores.redis', [
             'driver' => 'redis',
             'connection' => 'default',
         ]);
-        $this->app['config']->set('database.redis.default', [
+        config()->set('database.redis.default', [
             'host' => '127.0.0.1',
             'port' => 6379,
             'database' => 0,
@@ -41,7 +46,7 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
         $store = $manager->store();
 
         $this->assertInstanceOf(RecallStore::class, $store);
@@ -51,7 +56,7 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $store1 = $manager->store();
         $store2 = $manager->store();
@@ -63,7 +68,7 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
         $subscriber = $manager->getSubscriber();
 
         $this->assertInstanceOf(InvalidationSubscriber::class, $subscriber);
@@ -73,7 +78,7 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $subscriber1 = $manager->getSubscriber();
         $subscriber2 = $manager->getSubscriber();
@@ -83,9 +88,9 @@ class RecallManagerTest extends TestCase
 
     public function testGetLocalCacheReturnsApcuByDefault(): void
     {
-        $this->app['config']->set('recall.local_cache.driver', 'apcu');
+        config()->set('recall.local_cache.driver', 'apcu');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
         $localCache = $manager->getLocalCache();
 
         $this->assertInstanceOf(LocalCache::class, $localCache);
@@ -95,9 +100,9 @@ class RecallManagerTest extends TestCase
     {
         $this->requireSwoole();
 
-        $this->app['config']->set('recall.local_cache.driver', 'swoole');
+        config()->set('recall.local_cache.driver', 'swoole');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
         $localCache = $manager->getLocalCache();
 
         $this->assertInstanceOf(SwooleTableCache::class, $localCache);
@@ -105,7 +110,7 @@ class RecallManagerTest extends TestCase
 
     public function testGetLocalCacheLazyInitialization(): void
     {
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $cache1 = $manager->getLocalCache();
         $cache2 = $manager->getLocalCache();
@@ -117,7 +122,7 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
         $tracker = $manager->getTracker();
 
         $this->assertInstanceOf(ClientTracker::class, $tracker);
@@ -127,7 +132,7 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $tracker1 = $manager->getTracker();
         $tracker2 = $manager->getTracker();
@@ -137,14 +142,14 @@ class RecallManagerTest extends TestCase
 
     public function testIsConnectedReturnsFalseInitially(): void
     {
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $this->assertFalse($manager->isConnected());
     }
 
     public function testDisconnectWhenNotConnected(): void
     {
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $manager->disconnect();
 
@@ -153,7 +158,7 @@ class RecallManagerTest extends TestCase
 
     public function testFlushLocalCache(): void
     {
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
         $localCache = $manager->getLocalCache();
 
         $localCache->put('test_key', 'test_value');
@@ -166,18 +171,18 @@ class RecallManagerTest extends TestCase
 
     public function testUsesCustomRedisStore(): void
     {
-        $this->app['config']->set('recall.redis_store', 'custom_redis');
-        $this->app['config']->set('cache.stores.custom_redis', [
+        config()->set('recall.redis_store', 'custom_redis');
+        config()->set('cache.stores.custom_redis', [
             'driver' => 'redis',
             'connection' => 'cache',
         ]);
-        $this->app['config']->set('database.redis.cache', [
+        config()->set('database.redis.cache', [
             'host' => '127.0.0.1',
             'port' => 6380,
             'database' => 1,
         ]);
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $this->assertFalse($manager->isConnected());
     }
@@ -186,12 +191,13 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('buildTrackingArgs');
 
-        $args = $method->invoke($manager, 123, [], null);
+        /** @var array<string> $args */
+        $args = $method->invoke($manager, 123, [], Mockery::mock(Connection::class));
 
         $this->assertEquals(['CLIENT', 'TRACKING', 'ON', 'REDIRECT', '123'], $args);
     }
@@ -199,15 +205,16 @@ class RecallManagerTest extends TestCase
     public function testBuildTrackingArgsWithPrefixes(): void
     {
         $this->configureRedis();
-        $this->app['config']->set('cache.stores.redis.prefix', 'laravel_cache_');
+        config()->set('cache.stores.redis.prefix', 'laravel_cache_');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('buildTrackingArgs');
 
-        $mockConnection = Mockery::mock();
+        $mockConnection = Mockery::mock(Connection::class);
 
+        /** @var array<string> $args */
         $args = $method->invoke($manager, 123, ['users:', 'settings:'], $mockConnection);
 
         $this->assertEquals('CLIENT', $args[0]);
@@ -222,50 +229,69 @@ class RecallManagerTest extends TestCase
         $this->assertStringEndsWith('settings:', $args[9]);
     }
 
-    public function testGetFullKeyPrefixWithStorePrefix(): void
+    public function testGetFullPrefixWithStorePrefix(): void
     {
         $this->configureRedis();
-        $this->app['config']->set('cache.stores.redis.prefix', 'myapp_');
+        config()->set('cache.stores.redis.prefix', 'myapp_');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
-        $reflection = new ReflectionClass($manager);
-        $method = $reflection->getMethod('getFullKeyPrefix');
-
-        $mockConnection = Mockery::mock();
-
-        $prefix = $method->invoke($manager, $mockConnection);
-
-        $this->assertEquals('myapp_', $prefix);
+        $this->assertEquals('myapp_', $manager->store()->getFullPrefix(Mockery::mock(Connection::class)));
     }
 
-    public function testGetFullKeyPrefixFallsBackToCachePrefix(): void
+    public function testGetFullPrefixFallsBackToCachePrefix(): void
     {
         $this->configureRedis();
-        $this->app['config']->set('cache.prefix', 'fallback_');
+        config()->set('cache.prefix', 'fallback_');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
-        $reflection = new ReflectionClass($manager);
-        $method = $reflection->getMethod('getFullKeyPrefix');
+        $this->assertEquals('fallback_', $manager->store()->getFullPrefix(Mockery::mock(Connection::class)));
+    }
 
-        $mockConnection = Mockery::mock();
+    public function testGetFullPrefixIncludesThePredisConnectionPrefix(): void
+    {
+        $this->configurePredis('app_');
 
-        $prefix = $method->invoke($manager, $mockConnection);
+        $store = app()->make(RecallManager::class)->store();
 
-        $this->assertEquals('fallback_', $prefix);
+        $this->assertEquals('app_store_', $store->getFullPrefix(app(RedisManager::class)->connection('default')));
+    }
+
+    public function testGetFullPrefixThrowsWhenThePredisPrefixCannotBeRead(): void
+    {
+        $this->configurePredis(new class implements ProcessorInterface
+        {
+            public function process(CommandInterface $command): void {}
+        });
+
+        $store = app()->make(RecallManager::class)->store();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Unable to read the key prefix from Predis processor');
+
+        $store->getFullPrefix(app(RedisManager::class)->connection('default'));
+    }
+
+    protected function configurePredis(string|ProcessorInterface $prefix): void
+    {
+        $this->configureRedis();
+        config()->set('database.redis.client', 'predis');
+        config()->set('database.redis.options', ['prefix' => $prefix]);
+        config()->set('cache.stores.redis.prefix', 'store_');
     }
 
     public function testItExtractsSchemeFromRedisConfig(): void
     {
         $this->configureRedis();
-        $this->app['config']->set('database.redis.default.scheme', 'tls');
+        config()->set('database.redis.default.scheme', 'tls');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('getRedisConnectionConfig');
 
+        /** @var array{scheme: string} $config */
         $config = $method->invoke($manager);
 
         $this->assertEquals('tls', $config['scheme']);
@@ -275,11 +301,12 @@ class RecallManagerTest extends TestCase
     {
         $this->configureRedis();
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('getRedisConnectionConfig');
 
+        /** @var array{scheme: string} $config */
         $config = $method->invoke($manager);
 
         $this->assertEquals('tcp', $config['scheme']);
@@ -288,13 +315,14 @@ class RecallManagerTest extends TestCase
     public function testItExtractsSslScheme(): void
     {
         $this->configureRedis();
-        $this->app['config']->set('database.redis.default.scheme', 'ssl');
+        config()->set('database.redis.default.scheme', 'ssl');
 
-        $manager = $this->app->make(RecallManager::class);
+        $manager = app()->make(RecallManager::class);
 
         $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('getRedisConnectionConfig');
 
+        /** @var array{scheme: string} $config */
         $config = $method->invoke($manager);
 
         $this->assertEquals('ssl', $config['scheme']);
