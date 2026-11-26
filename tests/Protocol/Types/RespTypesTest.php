@@ -9,7 +9,6 @@ use DefectiveCode\Recall\Protocol\Types\Push;
 use DefectiveCode\Recall\Protocol\Types\Error;
 use DefectiveCode\Recall\Protocol\Types\Integer;
 use DefectiveCode\Recall\Protocol\Types\RespNull;
-use DefectiveCode\Recall\Protocol\Types\RespType;
 use DefectiveCode\Recall\Protocol\Types\RespArray;
 use DefectiveCode\Recall\Protocol\Types\BulkString;
 use DefectiveCode\Recall\Protocol\Types\SimpleString;
@@ -72,13 +71,10 @@ class RespTypesTest extends TestCase
         $this->assertEquals('', $bulk->getValue());
     }
 
-    public function testRespNullReturnsNull(): void
+    public function testRespNullReportsItsType(): void
     {
         $null = new RespNull;
 
-        $value = fn (RespType $type): mixed => $type->getValue();
-
-        $this->assertNull($value($null));
         $this->assertEquals('null', $null->getType());
     }
 

@@ -6,11 +6,16 @@ namespace DefectiveCode\Recall\Tests;
 
 use Mockery;
 use ReflectionClass;
+use RuntimeException;
+use Illuminate\Redis\RedisManager;
+use Predis\Command\CommandInterface;
 use DefectiveCode\Recall\RecallManager;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
+use Illuminate\Redis\Connections\Connection;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
+use Predis\Command\Processor\ProcessorInterface;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use Mockery\Adapter\Phpunit\MockeryPHPUnitIntegration;
 
@@ -192,7 +197,7 @@ class RecallManagerTest extends TestCase
         $method = $reflection->getMethod('buildTrackingArgs');
 
         /** @var array<string> $args */
-        $args = $method->invoke($manager, 123, [], null);
+        $args = $method->invoke($manager, 123, [], Mockery::mock(Connection::class));
 
         $this->assertEquals(['CLIENT', 'TRACKING', 'ON', 'REDIRECT', '123'], $args);
     }
@@ -207,7 +212,7 @@ class RecallManagerTest extends TestCase
         $reflection = new ReflectionClass($manager);
         $method = $reflection->getMethod('buildTrackingArgs');
 
-        $mockConnection = Mockery::mock();
+        $mockConnection = Mockery::mock(Connection::class);
 
         /** @var array<string> $args */
         $args = $method->invoke($manager, 123, ['users:', 'settings:'], $mockConnection);
@@ -224,38 +229,56 @@ class RecallManagerTest extends TestCase
         $this->assertStringEndsWith('settings:', $args[9]);
     }
 
-    public function testGetFullKeyPrefixWithStorePrefix(): void
+    public function testGetFullPrefixWithStorePrefix(): void
     {
         $this->configureRedis();
         config()->set('cache.stores.redis.prefix', 'myapp_');
 
         $manager = app()->make(RecallManager::class);
 
-        $reflection = new ReflectionClass($manager);
-        $method = $reflection->getMethod('getFullKeyPrefix');
-
-        $mockConnection = Mockery::mock();
-
-        $prefix = $method->invoke($manager, $mockConnection);
-
-        $this->assertEquals('myapp_', $prefix);
+        $this->assertEquals('myapp_', $manager->store()->getFullPrefix(Mockery::mock(Connection::class)));
     }
 
-    public function testGetFullKeyPrefixFallsBackToCachePrefix(): void
+    public function testGetFullPrefixFallsBackToCachePrefix(): void
     {
         $this->configureRedis();
         config()->set('cache.prefix', 'fallback_');
 
         $manager = app()->make(RecallManager::class);
 
-        $reflection = new ReflectionClass($manager);
-        $method = $reflection->getMethod('getFullKeyPrefix');
+        $this->assertEquals('fallback_', $manager->store()->getFullPrefix(Mockery::mock(Connection::class)));
+    }
 
-        $mockConnection = Mockery::mock();
+    public function testGetFullPrefixIncludesThePredisConnectionPrefix(): void
+    {
+        $this->configurePredis('app_');
 
-        $prefix = $method->invoke($manager, $mockConnection);
+        $store = app()->make(RecallManager::class)->store();
 
-        $this->assertEquals('fallback_', $prefix);
+        $this->assertEquals('app_store_', $store->getFullPrefix(app(RedisManager::class)->connection('default')));
+    }
+
+    public function testGetFullPrefixThrowsWhenThePredisPrefixCannotBeRead(): void
+    {
+        $this->configurePredis(new class implements ProcessorInterface
+        {
+            public function process(CommandInterface $command): void {}
+        });
+
+        $store = app()->make(RecallManager::class)->store();
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('Unable to read the key prefix from Predis processor');
+
+        $store->getFullPrefix(app(RedisManager::class)->connection('default'));
+    }
+
+    protected function configurePredis(string|ProcessorInterface $prefix): void
+    {
+        $this->configureRedis();
+        config()->set('database.redis.client', 'predis');
+        config()->set('database.redis.options', ['prefix' => $prefix]);
+        config()->set('cache.stores.redis.prefix', 'store_');
     }
 
     public function testItExtractsSchemeFromRedisConfig(): void

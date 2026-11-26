@@ -13,6 +13,8 @@ use Illuminate\Contracts\Cache\Lock;
 use Illuminate\Contracts\Cache\Store;
 use DefectiveCode\Recall\RecallManager;
 use Illuminate\Contracts\Cache\LockProvider;
+use Illuminate\Redis\Connections\Connection;
+use Predis\Command\Processor\ProcessorInterface;
 use Illuminate\Redis\Connections\PredisConnection;
 use Illuminate\Redis\Connections\PhpRedisConnection;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
@@ -176,20 +178,35 @@ class RecallStore implements LockProvider, Store
 
     protected function getRedisKey(string $key): string
     {
-        return $this->getConnectionPrefix().$this->redisStore->getPrefix().$key;
+        return $this->getFullPrefix($this->redisStore->connection()).$key;
     }
 
-    protected function getConnectionPrefix(): string
+    public function getFullPrefix(Connection $connection): string
     {
-        $connection = $this->redisStore->connection();
+        return $this->getConnectionPrefix($connection).$this->redisStore->getPrefix();
+    }
 
+    protected function getConnectionPrefix(Connection $connection): string
+    {
         /** @var string $prefix */
         $prefix = match (true) {
             $connection instanceof PhpRedisConnection && (($client = $connection->client()) instanceof Redis || $client instanceof RedisCluster) => $client->getOption(Redis::OPT_PREFIX) ?: '',
-            $connection instanceof PredisConnection && ($processor = $connection->getOptions()->prefix) instanceof Stringable => (string) $processor,
+            $connection instanceof PredisConnection => $this->getPredisPrefix($connection),
             default => '',
         };
 
         return $prefix;
+    }
+
+    protected function getPredisPrefix(PredisConnection $connection): string
+    {
+        /** @var ProcessorInterface|null $processor */
+        $processor = $connection->getOptions()->prefix;
+
+        return match (true) {
+            $processor === null => '',
+            $processor instanceof Stringable => (string) $processor,
+            default => throw new RuntimeException('Unable to read the key prefix from Predis processor '.$processor::class),
+        };
     }
 }

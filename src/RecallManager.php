@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall;
 
 use Redis;
-use Stringable;
-use RedisCluster;
 use Predis\Client;
 use RuntimeException;
 use Illuminate\Cache\CacheManager;
@@ -14,11 +12,10 @@ use Illuminate\Redis\RedisManager;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
 use Illuminate\Contracts\Config\Repository;
+use Illuminate\Redis\Connections\Connection;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Redis\Connections\PredisConnection;
-use Illuminate\Redis\Connections\PhpRedisConnection;
 use DefectiveCode\Recall\Redis\InvalidationSubscriber;
 use DefectiveCode\Recall\Contracts\LocalCacheInterface;
 
@@ -197,7 +194,7 @@ class RecallManager
      * @param  array<string>  $cachePrefixes
      * @return array<string>
      */
-    protected function buildTrackingArgs(int $redirectId, array $cachePrefixes, mixed $connection): array
+    protected function buildTrackingArgs(int $redirectId, array $cachePrefixes, Connection $connection): array
     {
         $args = ['CLIENT', 'TRACKING', 'ON', 'REDIRECT', (string) $redirectId];
 
@@ -207,7 +204,7 @@ class RecallManager
 
         $args[] = 'BCAST';
 
-        $fullPrefix = $this->getFullKeyPrefix($connection);
+        $fullPrefix = $this->store()->getFullPrefix($connection);
 
         foreach ($cachePrefixes as $prefix) {
             $args[] = 'PREFIX';
@@ -215,24 +212,5 @@ class RecallManager
         }
 
         return $args;
-    }
-
-    protected function getFullKeyPrefix(mixed $connection): string
-    {
-        /** @var string $connectionPrefix */
-        $connectionPrefix = match (true) {
-            $connection instanceof PhpRedisConnection && (($client = $connection->client()) instanceof Redis || $client instanceof RedisCluster) => $client->getOption(Redis::OPT_PREFIX) ?: '',
-            $connection instanceof PredisConnection && ($processor = $connection->getOptions()->prefix) instanceof Stringable => (string) $processor,
-            default => '',
-        };
-
-        /** @var string $redisStoreName */
-        $redisStoreName = $this->app->make(Repository::class)->get('recall.redis_store') ?? 'redis';
-        /** @var string $storePrefix */
-        $storePrefix = $this->app->make(Repository::class)->get("cache.stores.{$redisStoreName}.prefix")
-            ?? $this->app->make(Repository::class)->get('cache.prefix')
-            ?? '';
-
-        return $connectionPrefix.$storePrefix;
     }
 }

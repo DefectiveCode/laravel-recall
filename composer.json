@@ -21,9 +21,9 @@
   ],
   "require": {
     "php": ">=8.5",
-    "illuminate/cache": "^12.0|^13.0",
-    "illuminate/contracts": "^12.0|^13.0",
-    "illuminate/support": "^12.0|^13.0"
+    "illuminate/cache": "^12.71|^13.40",
+    "illuminate/contracts": "^12.71|^13.40",
+    "illuminate/support": "^12.71|^13.40"
   },
   "require-dev": {
     "laravel/octane": "^2.26",

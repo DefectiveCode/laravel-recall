@@ -50,6 +50,10 @@ jobs:
       - name: Install dependencies
         run: composer update ${{ matrix.dependency-flags }} --prefer-dist --no-interaction --no-progress
 
+      - name: Show resolved Laravel version
+        if: contains(matrix.dependency-flags, '--prefer-lowest')
+        run: composer show laravel/framework
+
       - name: Execute tests
         run: composer test -- --order-by random
 
