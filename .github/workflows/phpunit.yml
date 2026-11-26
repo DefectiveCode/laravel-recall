@@ -2,28 +2,36 @@ name: Tests
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
-        php: [8.4, 8.5]
-        stability: [prefer-lowest, prefer-stable]
+        php: ['8.5']
+        dependency-flags: ['--prefer-lowest --prefer-stable', '--prefer-stable']
 
-    name: P${{ matrix.php }} - ${{ matrix.stability }}
+    name: P${{ matrix.php }} - ${{ matrix.dependency-flags }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo, apcu, swoole
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo, redis, apcu, swoole
           ini-values: apc.enable_cli=1, apc.enabled=1
           coverage: none
+          tools: composer:v2
+        env:
+          fail-fast: true
 
       - name: Verify extensions
         run: |
@@ -36,8 +44,14 @@ jobs:
           echo "::add-matcher::${{ runner.tool_cache }}/php.json"
           echo "::add-matcher::${{ runner.tool_cache }}/phpunit.json"
 
+      - name: Validate composer.json
+        run: composer validate --strict
+
       - name: Install dependencies
-        run: composer update --${{ matrix.stability }} --prefer-dist --no-interaction
+        run: composer update ${{ matrix.dependency-flags }} --prefer-dist --no-interaction --no-progress
 
       - name: Execute tests
-        run: vendor/bin/phpunit
+        run: composer test -- --order-by random
+
+      - name: Analyse code
+        run: composer analyse -- --no-progress

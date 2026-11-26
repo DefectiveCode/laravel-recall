@@ -2,6 +2,9 @@ name: Code Styling
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   code-styling:
     runs-on: ubuntu-latest
@@ -10,12 +13,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.head_ref }}
+          persist-credentials: false
 
-      - run: npm install
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, pdo, sqlite, pdo_sqlite, bcmath, soap, intl, gd, exif, iconv, imagick, fileinfo
+          coverage: none
+          tools: composer:v2
+        env:
+          fail-fast: true
+
+      - name: Install PHP dependencies
+        run: composer install --prefer-dist --no-interaction --no-progress
+
+      - run: test -f bun.lock
+
+      - name: Install formatter dependencies
+        run: bun install --frozen-lockfile
 
       - name: Prettier
-        run: npx prettier --check "{!(vendor|node_modules)/**/*,*}.{js,ts,jsx,tsx,vue,xml,json,blade.php,css,md,yml,html}"
+        run: bun --bun run format:check
+
+      - name: Package JSON
+        run: bun --bun run package:check
 
       - name: Pint
-        uses: aglipanci/laravel-pint-action@2.6
+        run: composer lint -- --test

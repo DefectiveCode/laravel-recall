@@ -11,10 +11,12 @@ use Laravel\Octane\Events\TickReceived;
 use Laravel\Octane\Events\WorkerStarting;
 use Laravel\Octane\Events\WorkerStopping;
 use Laravel\Octane\Events\RequestReceived;
+use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Contracts\Foundation\Application;
 use DefectiveCode\Recall\Listeners\WarmConnections;
 use DefectiveCode\Recall\Listeners\CloseConnections;
 use DefectiveCode\Recall\Listeners\ProcessInvalidations;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 
 class RecallServiceProvider extends ServiceProvider
 {
@@ -53,21 +55,23 @@ class RecallServiceProvider extends ServiceProvider
 
     protected function registerOctaneListeners(): void
     {
-        if (! class_exists(RequestReceived::class) || ! ($this->app['config']['recall.enabled'] ?? true)) {
+        $config = $this->app->make(ConfigRepository::class);
+
+        if (! class_exists(RequestReceived::class) || ! ($config->get('recall.enabled') ?? true)) {
             return;
         }
 
         $this->app->make(RecallManager::class);
 
-        $events = $this->app['events'];
+        $events = $this->app->make(Dispatcher::class);
 
-        if ($this->app['config']['recall.listeners.warm'] ?? true) {
+        if ($config->get('recall.listeners.warm') ?? true) {
             $events->listen(WorkerStarting::class, WarmConnections::class);
         }
 
         $events->listen(RequestReceived::class, ProcessInvalidations::class);
 
-        if ($this->app['config']['recall.listeners.tick'] ?? false) {
+        if ($config->get('recall.listeners.tick') ?? false) {
             $events->listen(TickReceived::class, ProcessInvalidations::class);
         }
 

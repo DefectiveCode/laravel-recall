@@ -28,6 +28,7 @@ class LocalCache implements LocalCacheInterface
     public function get(string $key): mixed
     {
         $success = false;
+        /** @var string $value */
         $value = apcu_fetch($this->keyPrefix.$key, $success);
 
         if (! $success) {
@@ -56,6 +57,7 @@ class LocalCache implements LocalCacheInterface
 
         $keys = [];
         foreach ($iterator as $item) {
+            /** @var array{key: string} $item */
             $keys[] = $item['key'];
         }
 
@@ -63,7 +65,9 @@ class LocalCache implements LocalCacheInterface
             return true;
         }
 
-        return apcu_delete($keys) !== false;
+        apcu_delete($keys);
+
+        return true;
     }
 
     protected function ensureApcuAvailable(): void

@@ -38,6 +38,7 @@ class SwooleTableCache implements LocalCacheInterface
     public function get(string $key): mixed
     {
         $hashedKey = $this->hashKey($key);
+        /** @var array{value: string, expires_at: int}|false $row */
         $row = $this->table->get($hashedKey);
 
         if ($row === false) {
@@ -74,6 +75,7 @@ class SwooleTableCache implements LocalCacheInterface
         $keysToDelete = [];
 
         foreach ($this->table as $key => $row) {
+            /** @var string $key */
             $keysToDelete[] = $key;
         }
 

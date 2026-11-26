@@ -20,18 +20,21 @@
     }
   ],
   "require": {
-    "php": ">=8.4",
-    "illuminate/cache": "^11.0|^12.0|^13.0",
-    "illuminate/contracts": "^11.0|^12.0|^13.0",
-    "illuminate/support": "^11.0|^12.0|^13.0"
+    "php": ">=8.5",
+    "illuminate/cache": "^12.0|^13.0",
+    "illuminate/contracts": "^12.0|^13.0",
+    "illuminate/support": "^12.0|^13.0"
   },
   "require-dev": {
-    "laravel/octane": "^2.0",
-    "laravel/pint": "^1.8",
-    "mockery/mockery": "^1.6",
-    "nunomaduro/collision": "^8.0",
-    "orchestra/testbench": "^9.0|^10.0|^11.0",
-    "phpunit/phpunit": "^12.0"
+    "laravel/octane": "^2.26",
+    "laravel/pint": "^1.32.3",
+    "mockery/mockery": "^1.6.15",
+    "nunomaduro/collision": "^8.9.6",
+    "orchestra/testbench": "^10.12 || ^11.3",
+    "phpstan/phpstan": "^2.3.7",
+    "phpstan/phpstan-mockery": "^2.0",
+    "phpunit/phpunit": "^12.5.45 || ^13.4.8",
+    "predis/predis": "^3.8"
   },
   "suggest": {
     "ext-apcu": "Required for APCu local cache driver (default)",
@@ -50,7 +53,8 @@
       "@php vendor/bin/testbench package:discover --ansi"
     ],
     "test": "vendor/bin/phpunit",
-    "lint": "vendor/bin/pint"
+    "lint": "vendor/bin/pint",
+    "analyse": "vendor/bin/phpstan analyse"
   },
   "config": {
     "sort-packages": true

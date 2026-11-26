@@ -144,6 +144,9 @@ class InvalidationSubscriberTest extends TestCase
         $this->assertFalse($subscriber->isConnected());
     }
 
+    /**
+     * @param  array<mixed>  $parameters
+     */
     protected function invokeMethod(object $object, string $methodName, array $parameters = []): mixed
     {
         $reflection = new ReflectionClass($object);

@@ -5,9 +5,15 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall;
 
 use Redis;
+use Stringable;
+use RedisCluster;
+use Predis\Client;
 use RuntimeException;
+use Illuminate\Cache\CacheManager;
+use Illuminate\Redis\RedisManager;
 use DefectiveCode\Recall\Cache\LocalCache;
 use DefectiveCode\Recall\Cache\RecallStore;
+use Illuminate\Contracts\Config\Repository;
 use DefectiveCode\Recall\Cache\SwooleTableCache;
 use DefectiveCode\Recall\Tracking\ClientTracker;
 use Illuminate\Contracts\Foundation\Application;
@@ -38,17 +44,21 @@ class RecallManager
             return $this->store;
         }
 
-        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
-        $redisStore = $this->app['cache']->store($redisStoreName)->getStore();
+        /** @var string $redisStoreName */
+        $redisStoreName = $this->app->make(Repository::class)->get('recall.redis_store') ?? 'redis';
+        $redisStore = $this->app->make(CacheManager::class)->store($redisStoreName)->getStore();
+
+        /** @var array{enabled?: bool, cache_prefixes?: array<string>} $config */
+        $config = [
+            'enabled' => $this->app->make(Repository::class)->get('recall.enabled') ?? true,
+            'cache_prefixes' => $this->app->make(Repository::class)->get('recall.cache_prefixes') ?? [],
+        ];
 
         $this->store = new RecallStore(
             redisStore: $redisStore,
             localCache: $this->getLocalCache(),
             manager: $this,
-            config: [
-                'enabled' => $this->app['config']['recall.enabled'] ?? true,
-                'cache_prefixes' => $this->app['config']['recall.cache_prefixes'] ?? [],
-            ],
+            config: $config,
         );
 
         return $this->store;
@@ -65,8 +75,9 @@ class RecallManager
             return $this->localCache;
         }
 
-        $driver = $this->app['config']['recall.local_cache.driver'] ?? 'apcu';
-        $config = $this->app['config']['recall.local_cache'] ?? [];
+        $driver = $this->app->make(Repository::class)->get('recall.local_cache.driver') ?? 'apcu';
+        /** @var array{key_prefix?: string, default_ttl?: int, table_size?: int, value_size?: int} $config */
+        $config = $this->app->make(Repository::class)->get('recall.local_cache') ?? [];
 
         return $this->localCache = match ($driver) {
             'swoole' => new SwooleTableCache($config),
@@ -132,9 +143,12 @@ class RecallManager
      */
     protected function getRedisConnectionConfig(): array
     {
-        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
-        $connectionName = $this->app['config']["cache.stores.{$redisStoreName}.connection"] ?? 'default';
-        $redisConfig = $this->app['config']["database.redis.{$connectionName}"] ?? [];
+        /** @var string $redisStoreName */
+        $redisStoreName = $this->app->make(Repository::class)->get('recall.redis_store') ?? 'redis';
+        /** @var string $connectionName */
+        $connectionName = $this->app->make(Repository::class)->get("cache.stores.{$redisStoreName}.connection") ?? 'default';
+        /** @var array{host?: string, port?: int|string, password?: ?string, username?: ?string, database?: int|string, read_timeout?: float|int|string, timeout?: float|int|string, scheme?: string} $redisConfig */
+        $redisConfig = $this->app->make(Repository::class)->get("database.redis.{$connectionName}") ?? [];
 
         return [
             'host' => $redisConfig['host'] ?? '127.0.0.1',
@@ -149,13 +163,17 @@ class RecallManager
 
     protected function enableClientTracking(int $redirectId): void
     {
-        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
-        $connectionName = $this->app['config']["cache.stores.{$redisStoreName}.connection"] ?? 'default';
+        /** @var string $redisStoreName */
+        $redisStoreName = $this->app->make(Repository::class)->get('recall.redis_store') ?? 'redis';
+        /** @var string $connectionName */
+        $connectionName = $this->app->make(Repository::class)->get("cache.stores.{$redisStoreName}.connection") ?? 'default';
 
-        $connection = $this->app['redis']->connection($connectionName);
+        $connection = $this->app->make(RedisManager::class)->connection($connectionName);
+        /** @var Redis|Client $client */
         $client = $connection->client();
 
-        $cachePrefixes = $this->app['config']['recall.cache_prefixes'] ?? [];
+        /** @var array<string> $cachePrefixes */
+        $cachePrefixes = $this->app->make(Repository::class)->get('recall.cache_prefixes') ?? [];
         $args = $this->buildTrackingArgs($redirectId, $cachePrefixes, $connection);
 
         $result = $client instanceof Redis
@@ -201,15 +219,18 @@ class RecallManager
 
     protected function getFullKeyPrefix(mixed $connection): string
     {
+        /** @var string $connectionPrefix */
         $connectionPrefix = match (true) {
-            $connection instanceof PhpRedisConnection => $connection->client()->getOption(Redis::OPT_PREFIX) ?: '',
-            $connection instanceof PredisConnection => $connection->getOptions()->prefix ?: '',
+            $connection instanceof PhpRedisConnection && (($client = $connection->client()) instanceof Redis || $client instanceof RedisCluster) => $client->getOption(Redis::OPT_PREFIX) ?: '',
+            $connection instanceof PredisConnection && ($processor = $connection->getOptions()->prefix) instanceof Stringable => (string) $processor,
             default => '',
         };
 
-        $redisStoreName = $this->app['config']['recall.redis_store'] ?? 'redis';
-        $storePrefix = $this->app['config']["cache.stores.{$redisStoreName}.prefix"]
-            ?? $this->app['config']['cache.prefix']
+        /** @var string $redisStoreName */
+        $redisStoreName = $this->app->make(Repository::class)->get('recall.redis_store') ?? 'redis';
+        /** @var string $storePrefix */
+        $storePrefix = $this->app->make(Repository::class)->get("cache.stores.{$redisStoreName}.prefix")
+            ?? $this->app->make(Repository::class)->get('cache.prefix')
             ?? '';
 
         return $connectionPrefix.$storePrefix;

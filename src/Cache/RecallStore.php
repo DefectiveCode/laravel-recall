@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace DefectiveCode\Recall\Cache;
 
 use Redis;
+use Stringable;
+use RedisCluster;
 use RuntimeException;
 use Illuminate\Cache\RedisStore;
 use Illuminate\Contracts\Cache\Lock;
@@ -109,6 +111,10 @@ class RecallStore implements LockProvider, Store
         return $this->redisStore->forever($key, $value);
     }
 
+    /**
+     * @param  string  $key
+     * @param  int  $seconds
+     */
     public function touch($key, $seconds): bool
     {
         if ($this->shouldCacheLocally($key)) {
@@ -177,10 +183,13 @@ class RecallStore implements LockProvider, Store
     {
         $connection = $this->redisStore->connection();
 
-        return match (true) {
-            $connection instanceof PhpRedisConnection => $connection->client()->getOption(Redis::OPT_PREFIX) ?: '',
-            $connection instanceof PredisConnection => $connection->getOptions()->prefix ?: '',
+        /** @var string $prefix */
+        $prefix = match (true) {
+            $connection instanceof PhpRedisConnection && (($client = $connection->client()) instanceof Redis || $client instanceof RedisCluster) => $client->getOption(Redis::OPT_PREFIX) ?: '',
+            $connection instanceof PredisConnection && ($processor = $connection->getOptions()->prefix) instanceof Stringable => (string) $processor,
             default => '',
         };
+
+        return $prefix;
     }
 }

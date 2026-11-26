@@ -64,6 +64,8 @@ class InvalidationSubscriber
             return;
         }
 
+        assert($this->socket !== null && $this->parser !== null);
+
         $command = $this->writer->subscribe(self::INVALIDATION_CHANNEL);
         $this->socket->write($command);
 
@@ -82,6 +84,8 @@ class InvalidationSubscriber
         if (! $this->subscribed || $this->socket === null) {
             return [];
         }
+
+        assert($this->parser !== null);
 
         $invalidatedKeys = [];
 
@@ -114,6 +118,8 @@ class InvalidationSubscriber
 
     protected function fetchConnectionId(): void
     {
+        assert($this->socket !== null && $this->parser !== null);
+
         $command = $this->writer->clientId();
         $this->socket->write($command);
 
@@ -176,6 +182,8 @@ class InvalidationSubscriber
             return;
         }
 
+        assert($this->socket !== null && $this->parser !== null);
+
         $username = $this->config['username'] ?? null;
         $command = $this->writer->auth($password, $username);
 
@@ -194,6 +202,8 @@ class InvalidationSubscriber
         if ($database === 0) {
             return;
         }
+
+        assert($this->socket !== null && $this->parser !== null);
 
         $command = $this->writer->select($database);
         $this->socket->write($command);
